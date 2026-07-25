@@ -9,6 +9,7 @@ from pathlib import Path
 from dotenv import load_dotenv
 
 load_dotenv()  # load TELEGRAM_API_ID/TELEGRAM_API_HASH from .env if present
+from handlers import handle_message
 from telethon import TelegramClient, events
 
 
@@ -50,8 +51,11 @@ async def main():
         lower = text.lower()
         await asyncio.sleep(2)
 
-        result = {"answer": "test", "log_url": "https://example.com/run.jsonl"}
-        await event.respond(json.dumps(result))
+        result = await handle_message(event, None)
+        if isinstance(result, dict) and "answer" in result:
+            await event.respond(json.dumps(result))
+        else:
+            await event.respond("ok")
 
     await client.run_until_disconnected()
 
