@@ -3,7 +3,7 @@ import time
 from typing import Any
 
 import google.genai as genai
-from formatter import format_final_answer
+from agent.formatter import format_final_answer
 from google.genai import types
 
 client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
@@ -11,7 +11,7 @@ MODEL_NAME = "gemini-3.1-flash-lite"
 import json
 import time
 
-from tools_web import fetch_table_from_url, run_python, web_fetch
+from agent.tools_web import fetch_table_from_url, run_python, web_fetch
 
 SYSTEM_PROMPT = """You are a data-analysis agent. You receive a data-analysis question via Telegram.
 
