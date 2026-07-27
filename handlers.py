@@ -1,6 +1,6 @@
 import re
 import time
-from logging.logging import flush_log, make_logger
+from logging.logger import flush_log, make_logger
 
 from agent.orchestrator import run_agent_and_format
 
