@@ -1,8 +1,8 @@
 import re
 import time
-from logging.logger import flush_log, make_logger
 
 from agent.orchestrator import run_agent_and_format
+from logger import flush_log, make_logger
 
 # ---- simple in-memory session store (module-level, since Telethon has no built-in context.chat_data) ----
 sessions: dict[int, dict] = {}
