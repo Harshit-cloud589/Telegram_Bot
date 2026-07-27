@@ -1,3 +1,5 @@
+print("!!!! PROCESS STARTED - BUILD MARKER v99 !!!!", flush=True)
+
 import asyncio
 import json
 import os
