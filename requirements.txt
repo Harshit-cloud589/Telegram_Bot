@@ -3,3 +3,5 @@ google-genai
 telethon
 python-dotenv
 google-cloud-storage
+pandas
+requests
