@@ -1,9 +1,12 @@
 # logging/logger.py
+import asyncio
 import json
 import os
 import tempfile
 import threading
 import time
+
+_log_lock = asyncio.Lock()
 
 from google.cloud import storage
 
@@ -23,21 +26,33 @@ _lock = (
 )  # GCS has no native append; we read-modify-write, so serialize access
 
 
-def append_log_lines(entries: list[dict]):
+def _append_log_lines_sync(lines: str):
+    blob = _bucket.blob(OBJECT_NAME)
+    try:
+        existing = blob.download_as_text()
+    except Exception:
+        existing = ""
+    blob.upload_from_string(
+        existing + lines + "\n", content_type="application/x-ndjson"
+    )
+
+
+async def append_log_lines(entries: list[dict]):
     """Append a batch of JSONL entries to the public log object."""
     if not entries:
         return
     lines = "\n".join(json.dumps(e, default=str) for e in entries)
+    async with _log_lock:
+        with _lock:
+            blob = _bucket.blob(OBJECT_NAME)
+            try:
+                existing = blob.download_as_text()
+            except Exception:
+                existing = ""  # object doesn't exist yet — first write
 
-    with _lock:
-        blob = _bucket.blob(OBJECT_NAME)
-        try:
-            existing = blob.download_as_text()
-        except Exception:
-            existing = ""  # object doesn't exist yet — first write
-
-        new_content = existing + (lines + "\n")
-        blob.upload_from_string(new_content, content_type="application/x-ndjson")
+            new_content = existing + (lines + "\n")
+            blob.upload_from_string(new_content, content_type="application/x-ndjson")
+            await asyncio.to_thread(_append_log_lines_sync, lines)
 
     print(f"[LOG] appended {len(entries)} lines to {LOG_URL}")
 
