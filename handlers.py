@@ -1,5 +1,8 @@
 import re
 import time
+from logging.logging import flush_log, make_logger
+
+from agent.orchestrator import run_agent_and_format
 
 # ---- simple in-memory session store (module-level, since Telethon has no built-in context.chat_data) ----
 sessions: dict[int, dict] = {}
@@ -39,21 +42,21 @@ async def handle_message(event, context=None) -> dict:
 
     if expects_json_reply(text):
         # Final turn — run the real agent pipeline and produce the strict answer.
-        answer_payload = await run_agent_and_format(session["messages"])
+        log_fn, log_buffer = make_logger(chat_id, qid=message_id)
+        answer_payload = await run_agent_and_format(
+            session["messages"],
+            timeout_seconds=60,
+            log_fn=make_logger(chat_id, message_id, log_fn),
+        )
+        log_fn({"event": "final_answer", "answer": answer_payload})
+
+        # flush to public bucket BEFORE sending the Telegram reply
+        flush_log(log_buffer)
         session["messages"].append({"role": "assistant", "text": str(answer_payload)})
+        answer_payload["log_url"] = LOG_URL
         return answer_payload  # e.g. {"answer": ..., "log_url": "..."}
     else:
         # Intermediate turn — acknowledge, don't emit the final answer shape yet.
         ack = {"status": "received"}
         session["messages"].append({"role": "assistant", "text": str(ack)})
         return ack
-
-
-async def run_agent_and_format(messages: list[dict]) -> dict:
-    """
-    Placeholder for Phase 4/6 — replace with your real agent orchestrator call.
-    Must return a dict matching {"answer": <shaped>, "log_url": "..."}.
-    """
-    last_text = messages[-1]["text"]
-    # TODO: call your LLM agent here, using `messages` as conversation context
-    return {"answer": "ok-v1-debug", "log_url": "https://your-host/run.jsonl"}
