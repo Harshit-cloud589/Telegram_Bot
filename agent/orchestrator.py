@@ -5,10 +5,12 @@ from typing import Any
 import google.genai as genai
 from agent.formatter import format_final_answer
 from google.genai import types
+from groq import Groq
 from logger import LOG_URL
 
-client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
-MODEL_NAME = "gemini-3.1-flash-lite"
+# client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
+client = Groq(api_key=os.getenv("GROK_API_KEY"))
+MODEL_NAME = "openai/gpt-oss-120b"
 import json
 import time
 
@@ -87,12 +89,13 @@ async def run_agent_and_format(
     )
 
     try:
-        response = client.models.generate_content(
+        response = client.chat.completions.create(
             model=MODEL_NAME,
-            contents=contents,
-            config=config,
+            messages=[{"role": "system", "content": SYSTEM_PROMPT}]
+            + [{"role": m["role"], "content": m["text"]} for m in messages],
+            tools=TOOLS,
         )
-        raw_text = response.text.strip()
+        raw_text = response.choices[0].message.content.strip()
     except Exception as e:
         raw_text = ""
         print(f"[AGENT ERROR] {e}")
