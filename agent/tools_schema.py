@@ -1,0 +1,114 @@
+from agent.tools_web import (
+    datagovin_search,
+    fetch_excel_table,
+    fetch_pdf_tables,
+    fetch_table_from_url,
+    run_python,
+    web_fetch,
+    web_search_tool,
+)
+
+TOOL_SCHEMAS = [
+    {
+        "type": "function",
+        "function": {
+            "name": "web_fetch",
+            "description": "Fetch the raw text/HTML content of a URL. Use for MOSPI pages, data.gov.in, etc.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "url": {"type": "string", "description": "The full URL to fetch."}
+                },
+                "required": ["url"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "fetch_table_from_url",
+            "description": "Fetch a URL and parse the Nth HTML table on the page into CSV text.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "url": {"type": "string"},
+                    "table_index": {
+                        "type": "integer",
+                        "description": "0-indexed table position",
+                        "default": 0,
+                    },
+                },
+                "required": ["url"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "run_python",
+            "description": "Execute a Python snippet for data computation (pandas/numpy/statistics available). Print the final result. Use for ALL numeric/formula computations.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "code": {
+                        "type": "string",
+                        "description": "Python source code to execute.",
+                    }
+                },
+                "required": ["code"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "web_search_tool",
+            "description": "Search the web for a query and return top result URLs + snippets. Use to locate MOSPI/data.gov.in pages before fetching.",
+            "parameters": {
+                "type": "object",
+                "properties": {"query": {"type": "string"}},
+                "required": ["query"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "fetch_pdf_tables",
+            "description": "Download a PDF and extract tables from it as CSV text. Use for MOSPI PDF releases.",
+            "parameters": {
+                "type": "object",
+                "properties": {"url": {"type": "string"}},
+                "required": ["url"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "fetch_excel_table",
+            "description": "Download an Excel file and return its contents as CSV text.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "url": {"type": "string"},
+                    "sheet_name": {
+                        "type": "string",
+                        "description": "Optional sheet name",
+                    },
+                },
+                "required": ["url"],
+            },
+        },
+    },
+]
+
+# map name -> actual callable, for dispatch
+TOOL_FUNCTIONS = {
+    "web_fetch": web_fetch,
+    "fetch_table_from_url": fetch_table_from_url,
+    "run_python": run_python,
+    "web_search_tool": web_search_tool,
+    "fetch_pdf_tables": fetch_pdf_tables,
+    "fetch_excel_table": fetch_excel_table,
+}

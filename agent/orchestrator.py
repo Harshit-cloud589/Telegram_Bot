@@ -14,15 +14,8 @@ MODEL_NAME = "openai/gpt-oss-120b"
 import json
 import time
 
-from agent.tools_web import (
-    datagovin_search,
-    fetch_excel_table,
-    fetch_pdf_tables,
-    fetch_table_from_url,
-    run_python,
-    web_fetch,
-    web_search_tool,
-)
+from agent.tools_schema import TOOL_FUNCTIONS, TOOL_SCHEMAS
+from agent.tools_web import with_timeout
 
 SYSTEM_PROMPT = """You are a data-analysis agent. You receive a data-analysis question via Telegram.
 
@@ -57,52 +50,100 @@ When a question references MOSPI (Ministry of Statistics and Programme Implement
    clearly is uncertain rather than fabricating a precise-looking number.
 """
 
-TOOLS = [
-    web_fetch,
-    fetch_table_from_url,
-    run_python,
-    web_search_tool,
-    datagovin_search,
-    fetch_excel_table,
-    fetch_pdf_tables,
-]
-
 
 async def run_agent_and_format(
     messages: list[dict], timeout_seconds: int = 60, log_fn=None
 ) -> dict:
     start = time.monotonic()
-    budget = timeout_seconds * 0.75  # leave margin for formatting + send
+    deadline = start + (timeout_seconds * 0.75)
 
-    # Build conversation history for Gemini
-    contents = []
-    for m in messages:
-        role = "user" if m["role"] == "user" else "model"
-        contents.append(types.Content(role=role, parts=[types.Part(text=m["text"])]))
+    chat_messages = [{"role": "system", "content": SYSTEM_PROMPT}]
+    chat_messages += [{"role": m["role"], "content": m["text"]} for m in messages]
 
-    config = types.GenerateContentConfig(
-        system_instruction=SYSTEM_PROMPT,
-        tools=TOOLS,  # SDK auto-builds function-calling schema from these Python fns
-        automatic_function_calling=types.AutomaticFunctionCallingConfig(
-            maximum_remote_calls=8,  # cap tool-call iterations
-        ),
-    )
+    final_text = ""
 
-    try:
-        response = client.chat.completions.create(
-            model=MODEL_NAME,
-            messages=[{"role": "system", "content": SYSTEM_PROMPT}]
-            + [{"role": m["role"], "content": m["text"]} for m in messages],
-            tools=TOOLS,
+    for iteration in range(8):  # max tool-call iterations
+        if time.monotonic() > deadline:
+            if log_fn:
+                log_fn({"event": "budget_exceeded", "iteration": iteration})
+            break
+
+        try:
+            response = client.chat.completions.create(
+                model=MODEL_NAME,
+                messages=chat_messages,
+                tools=TOOL_SCHEMAS,
+            )
+        except Exception as e:
+            print(f"[AGENT ERROR] {e}")
+            if log_fn:
+                log_fn({"event": "llm_error", "error": str(e)})
+            break
+
+        msg = response.choices[0].message
+        tool_calls = getattr(msg, "tool_calls", None)
+
+        if not tool_calls:
+            final_text = (msg.content or "").strip()
+            if log_fn:
+                log_fn({"event": "final_answer_raw", "text": final_text})
+            break
+
+        # model wants to call one or more tools — append its request, then run each
+        chat_messages.append(
+            {
+                "role": "assistant",
+                "content": msg.content,
+                "tool_calls": [
+                    {
+                        "id": tc.id,
+                        "type": "function",
+                        "function": {
+                            "name": tc.function.name,
+                            "arguments": tc.function.arguments,
+                        },
+                    }
+                    for tc in tool_calls
+                ],
+            }
         )
-        raw_text = response.choices[0].message.content.strip()
-    except Exception as e:
-        raw_text = ""
-        print(f"[AGENT ERROR] {e}")
+
+        for tc in tool_calls:
+            fn_name = tc.function.name
+            try:
+                fn_args = json.loads(tc.function.arguments)
+            except Exception:
+                fn_args = {}
+
+            if log_fn:
+                log_fn({"event": "tool_call", "tool": fn_name, "args": fn_args})
+
+            fn = TOOL_FUNCTIONS.get(fn_name)
+            if fn is None:
+                result = f"ERROR: unknown tool {fn_name}"
+            else:
+                result = with_timeout(fn, 20, **fn_args)
+
+            if log_fn:
+                log_fn(
+                    {
+                        "event": "tool_result",
+                        "tool": fn_name,
+                        "result": str(result)[:2000],
+                    }
+                )
+
+            chat_messages.append(
+                {
+                    "role": "tool",
+                    "tool_call_id": tc.id,
+                    "content": str(result),
+                }
+            )
 
     elapsed = time.monotonic() - start
-    print(f"[AGENT] finished in {elapsed:.1f}s, raw output: {raw_text[:300]}")
+    print(f"[AGENT] finished in {elapsed:.1f}s, raw output: {final_text[:300]}")
 
     return format_final_answer(
-        raw_text, original_question=messages[-1]["text"], log_url=LOG_URL
+        final_text, original_question=messages[-1]["text"], log_url=LOG_URL
     )
