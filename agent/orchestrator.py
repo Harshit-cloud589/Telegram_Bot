@@ -9,7 +9,7 @@ from groq import Groq
 from logger import LOG_URL
 
 # client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
-client = Groq(api_key=os.getenv("GROK_API_KEY"))
+client = Groq(api_key=os.getenv("GROQ_API_KEY"))
 MODEL_NAME = "openai/gpt-oss-120b"
 import json
 import time
