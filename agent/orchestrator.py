@@ -12,7 +12,15 @@ MODEL_NAME = "gemini-3.1-flash-lite"
 import json
 import time
 
-from agent.tools_web import fetch_table_from_url, run_python, web_fetch
+from agent.tools_web import (
+    datagovin_search,
+    fetch_excel_table,
+    fetch_pdf_tables,
+    fetch_table_from_url,
+    run_python,
+    web_fetch,
+    web_search_tool,
+)
 
 SYSTEM_PROMPT = """You are a data-analysis agent. You receive a data-analysis question via Telegram.
 
@@ -47,7 +55,15 @@ When a question references MOSPI (Ministry of Statistics and Programme Implement
    clearly is uncertain rather than fabricating a precise-looking number.
 """
 
-TOOLS = [web_fetch, fetch_table_from_url, run_python]
+TOOLS = [
+    web_fetch,
+    fetch_table_from_url,
+    run_python,
+    web_search_tool,
+    datagovin_search,
+    fetch_excel_table,
+    fetch_pdf_tables,
+]
 
 
 async def run_agent_and_format(
