@@ -73,9 +73,9 @@ def make_logger(chat_id: int, qid: str = None) -> tuple[callable, list]:
     return log_fn, buffer
 
 
-def flush_log(buffer: list):
+async def flush_log(buffer: list):
     try:
-        append_log_lines(buffer)
+        await append_log_lines(buffer)
     except Exception as e:
         print(f"[LOG ERROR] failed to upload: {e}")
         # Don't raise — the bot must still reply. Log locally as a fallback.

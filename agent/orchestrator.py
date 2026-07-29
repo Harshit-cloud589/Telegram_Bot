@@ -26,6 +26,25 @@ Rules:
    if it asks for {"answer": <number>}, output just the number, e.g. 4).
 3. Use tools to fetch real data and compute exact answers — never guess numbers.
 4. Output nothing else — no markdown fences, no commentary, no surrounding envelope.
+
+When a question references MOSPI (Ministry of Statistics and Programme Implementation) data:
+1. Prefer these official entry points over generic search results:
+   - https://www.mospi.gov.in/ (main site)
+   - https://mospi.gov.in/publication (publications list)
+   - https://www.mospi.gov.in/press-release (latest press releases with headline stats)
+   - https://data.gov.in (many MOSPI datasets are also mirrored here with structured CSV/API access)
+2. MOSPI data is often released as PDF or Excel files, not HTML tables. If a fetched page
+   is a listing/index page, look for the actual download link (.xls, .xlsx, .pdf, .csv) and
+   fetch that file directly rather than trying to parse the index page's HTML.
+3. Prefer the PRIMARY MOSPI release over secondary news articles reporting on it — news
+   articles can be delayed, rounded, or incorrect.
+4. Key MOSPI datasets and where to find them:
+   - National Accounts Statistics / GDP data → mospi.gov.in, "National Accounts Statistics" section
+   - Periodic Labour Force Survey (PLFS) → mospi.gov.in, "PLFS" section, quarterly/annual bulletins
+   - Consumer Price Index (CPI) → mospi.gov.in, "Price Statistics" section
+   - Annual Survey of Industries (ASI) → mospi.gov.in, "Industrial Statistics" section
+5. If you cannot locate exact primary data after 2-3 search attempts, state your best estimate
+   clearly is uncertain rather than fabricating a precise-looking number.
 """
 
 TOOLS = [web_fetch, fetch_table_from_url, run_python]

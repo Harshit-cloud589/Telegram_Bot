@@ -1,7 +1,11 @@
 import concurrent.futures
 import io
+import os
+import statistics
 
+import numpy as np
 import pandas as pd
+import pdfplumber
 import requests
 
 
@@ -12,6 +16,19 @@ def with_timeout(fn, timeout_s, *args, **kwargs):
             return future.result(timeout=timeout_s)
         except concurrent.futures.TimeoutError:
             return f"ERROR: tool timed out after {timeout_s}s"
+
+
+def web_search_tool(query: str) -> str:
+    resp = requests.get(
+        "https://api.serper.dev/search",
+        headers={"X-API-KEY": os.environ["SERPER_API_KEY"]},
+        json={"q": query},
+        timeout=15,
+    )
+    results = resp.json().get("organic", [])[:5]
+    return "\n".join(
+        f"{r['title']} - {r['link']}\n{r.get('snippet', '')}" for r in results
+    )
 
 
 def web_fetch(url: str) -> str:
@@ -59,10 +76,6 @@ def run_python(code: str) -> str:
         "__builtins__": __builtins__,
     }
     try:
-        import statistics
-
-        import numpy as np
-
         allowed_globals["np"] = np
         allowed_globals["statistics"] = statistics
     except ImportError:
@@ -75,3 +88,60 @@ def run_python(code: str) -> str:
         return buf.getvalue() or "(no output — did you forget to print?)"
     except Exception as e:
         return f"ERROR executing code: {e}"
+
+
+def fetch_pdf_tables(url: str) -> str:
+    """Fetch a PDF from a URL and extract all tables into CSV text.
+
+    Args:
+        url: URL of the PDF file.
+    """
+    try:
+        resp = requests.get(url, timeout=30, headers={"User-Agent": "Mozilla/5.0"})
+        resp.raise_for_status()
+        pdf = pdfplumber.open(io.BytesIO(resp.content))
+        output = []
+        for i, page in enumerate(pdf.pages[:10]):  # cap pages to avoid huge output
+            tables = page.extract_tables()
+            for t in tables:
+                output.append(f"--- page {i + 1} table ---")
+                output.append(
+                    "\n".join(",".join(str(c) if c else "" for c in row) for row in t)
+                )
+        return "\n".join(output) if output else "No tables found in first 10 pages."
+    except Exception as e:
+        return f"ERROR parsing PDF {url}: {e}"
+
+
+def fetch_excel_table(url: str, sheet_name=None) -> str:
+    """Download an Excel file and return its contents as CSV text.
+
+    Args:
+        url: Direct URL to an .xls or .xlsx file.
+        sheet_name: Optional sheet name; if omitted, reads the first sheet.
+    """
+    try:
+        resp = requests.get(url, timeout=30, headers={"User-Agent": "Mozilla/5.0"})
+        resp.raise_for_status()
+        df = pd.read_excel(io.BytesIO(resp.content), sheet_name=sheet_name or 0)
+        return df.to_csv(index=False)[:10000]  # cap size
+    except Exception as e:
+        return f"ERROR parsing Excel {url}: {e}"
+
+
+def datagovin_search(query: str) -> str:
+    """Search data.gov.in's open data catalog for a dataset matching the query.
+
+    Args:
+        query: Search terms, e.g. "state wise per capita income"
+    """
+    resp = requests.get(
+        "https://api.data.gov.in/catalog",
+        params={
+            "api-key": os.environ.get("DATA_GOV_IN_API_KEY", ""),
+            "format": "json",
+            "filters[title]": query,
+        },
+        timeout=15,
+    )
+    return resp.text[:5000]
