@@ -7,6 +7,9 @@ import numpy as np
 import pandas as pd
 import pdfplumber
 import requests
+from dotenv import load_dotenv
+
+load_dotenv()
 
 
 def with_timeout(fn, timeout_s, *args, **kwargs):
@@ -19,16 +22,27 @@ def with_timeout(fn, timeout_s, *args, **kwargs):
 
 
 def web_search_tool(query: str) -> str:
-    resp = requests.get(
-        "https://api.serper.dev/search",
-        headers={"X-API-KEY": os.environ["SERPER_API_KEY"]},
-        json={"q": query},
-        timeout=15,
-    )
-    results = resp.json().get("organic", [])[:5]
-    return "\n".join(
-        f"{r['title']} - {r['link']}\n{r.get('snippet', '')}" for r in results
-    )
+    api_key = os.getenv("SERPER_API_KEY", "")
+    if not api_key:
+        return "ERROR: SERPER_API_KEY not configured"
+    try:
+        resp = requests.post(
+            "https://google.serper.dev/search",
+            headers={"X-API-KEY": api_key, "Content-Type": "application/json"},
+            json={"q": query},
+            timeout=15,
+        )
+        resp.raise_for_status()
+        data = resp.json()
+        results = data.get("organic", [])[:5]
+        if not results:
+            return f"No results found for: {query}"
+        return "\n".join(
+            f"{r.get('title', '')} - {r.get('link', '')}\n{r.get('snippet', '')}"
+            for r in results
+        )
+    except Exception as e:
+        return f"ERROR searching: {e}"
 
 
 def web_fetch(url: str) -> str:
