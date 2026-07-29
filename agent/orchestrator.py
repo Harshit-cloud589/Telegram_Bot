@@ -10,7 +10,7 @@ from logger import LOG_URL
 
 # client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
 client = Groq(api_key=os.getenv("GROQ_API_KEY"))
-MODEL_NAME = "openai/gpt-oss-120b"
+MODEL_NAME = "llama-3.3-70b-versatile"
 import json
 import time
 
@@ -75,10 +75,28 @@ async def run_agent_and_format(
                 tools=TOOL_SCHEMAS,
             )
         except Exception as e:
-            print(f"[AGENT ERROR] {e}")
-            if log_fn:
-                log_fn({"event": "llm_error", "error": str(e)})
-            break
+            err_str = str(e)
+            if (
+                "tool_use_failed" in err_str
+                or "Failed to parse tool call arguments" in err_str
+            ):
+                if log_fn:
+                    log_fn({"event": "tool_parse_retry", "error": err_str[:500]})
+                chat_messages.append(
+                    {
+                        "role": "user",
+                        "content": "Your last tool call had invalid JSON arguments. Retry the run_python call with the code compressed to a single line using \\n for line breaks, properly JSON-escaped.",
+                    }
+                )
+            try:
+                response = client.chat.completions.create(
+                    model=MODEL_NAME, messages=chat_messages, tools=TOOL_SCHEMAS
+                )
+            except Exception as e2:
+                print(f"[AGENT ERROR] {e}")
+                if log_fn:
+                    log_fn({"event": "llm_error", "error": str(e)})
+                break
 
         msg = response.choices[0].message
         tool_calls = getattr(msg, "tool_calls", None)

@@ -15,7 +15,7 @@ def format_final_answer(raw_text: str, original_question: str, log_url: str) -> 
         answer_value = extract_json_value(raw_text)
     except Exception as e:
         print(f"[FORMAT ERROR] could not parse model output as JSON: {e}")
-        answer_value = raw_text.strip()  # fallback: raw string, better than crashing
+        answer_value = None  # fallback: raw string, better than crashing
 
     # Safety net: if the model ignored instructions and STILL wrapped it in
     # {"answer": ...}, unwrap one level automatically rather than double-nesting.

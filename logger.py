@@ -62,13 +62,12 @@ def make_logger(chat_id: int, qid: str = None) -> tuple[callable, list]:
     call flush_log(buffer) once the run completes."""
     buffer = []
 
-    async def log_fn(entry: dict):
+    def log_fn(entry: dict):
         entry["ts"] = time.time()
         entry["chat_id"] = chat_id
         if qid:
             entry["qid"] = qid
         buffer.append(entry)
-        await flush_log(buffer)  # flush after each entry to avoid losing logs on crash
         print("[LOG]", entry)
 
     return log_fn, buffer

@@ -46,13 +46,18 @@ TOOL_SCHEMAS = [
         "type": "function",
         "function": {
             "name": "run_python",
-            "description": "Execute a Python snippet for data computation (pandas/numpy/statistics available). Print the final result. Use for ALL numeric/formula computations.",
+            "description": (
+                "Execute a Python snippet for data computation. IMPORTANT: the 'code' argument "
+                "must be a valid JSON string — use \\n for newlines, do not include raw line breaks. "
+                "Keep code compact; prefer semicolons or a single expression where possible. "
+                "Always end with a print() statement for the result — only stdout is captured."
+            ),
             "parameters": {
                 "type": "object",
                 "properties": {
                     "code": {
                         "type": "string",
-                        "description": "Python source code to execute.",
+                        "description": "Python source, JSON-escaped, must end with print(...)",
                     }
                 },
                 "required": ["code"],
