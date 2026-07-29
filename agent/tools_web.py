@@ -113,7 +113,7 @@ def fetch_pdf_tables(url: str) -> str:
         return f"ERROR parsing PDF {url}: {e}"
 
 
-def fetch_excel_table(url: str, sheet_name=None) -> str:
+def fetch_excel_table(url: str) -> str:
     """Download an Excel file and return its contents as CSV text.
 
     Args:
