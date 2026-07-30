@@ -37,24 +37,35 @@ def _append_log_lines_sync(lines: str):
     )
 
 
-async def append_log_lines(entries: list[dict]):
-    """Append a batch of JSONL entries to the public log object."""
+def append_log_lines(entries: list[dict]):
     if not entries:
+        print("[GCS] no entries to write, skipping", flush=True)
         return
     lines = "\n".join(json.dumps(e, default=str) for e in entries)
-    async with _log_lock:
-        with _lock:
-            blob = _bucket.blob(OBJECT_NAME)
-            try:
-                existing = blob.download_as_text()
-            except Exception:
-                existing = ""  # object doesn't exist yet — first write
+    print(
+        f"[GCS] attempting to write {len(entries)} entries to {OBJECT_NAME}", flush=True
+    )
 
-            new_content = existing + (lines + "\n")
+    with _lock:
+        blob = _bucket.blob(OBJECT_NAME)
+        try:
+            existing = blob.download_as_text()
+            print(
+                f"[GCS] downloaded existing content, {len(existing)} chars", flush=True
+            )
+        except Exception as e:
+            print(f"[GCS] download failed (may be first write): {e}", flush=True)
+            existing = ""
+
+        new_content = existing + (lines + "\n")
+        try:
             blob.upload_from_string(new_content, content_type="application/x-ndjson")
-            await asyncio.to_thread(_append_log_lines_sync, lines)
-
-    print(f"[LOG] appended {len(entries)} lines to {LOG_URL}")
+            print(
+                f"[GCS] upload SUCCESS, new size {len(new_content)} chars", flush=True
+            )
+        except Exception as e:
+            print(f"[GCS] upload FAILED: {type(e).__name__}: {e}", flush=True)
+            raise
 
 
 def make_logger(chat_id: int, qid: str = None) -> tuple[callable, list]:
