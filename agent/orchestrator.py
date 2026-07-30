@@ -270,8 +270,60 @@ def _run_resolved_tool(
     return fn_name, result
 
 
-MAX_ITERATIONS = 15
-MAX_TOOL_CALLS = 25
+def should_force_answer(state: AgentState) -> bool:
+    """
+    Decide whether the agent has started looping.
+    """
+
+    if len(state.executed_tools) < 4:
+        return False
+
+    recent = state.executed_tools[-4:]
+
+    tool_names = [t[0] for t in recent]
+
+    searches = tool_names.count("web_search_tool")
+
+    fetches = sum(
+        x
+        in (
+            "web_fetch",
+            "fetch_table_from_url",
+            "fetch_pdf_tables",
+            "fetch_dataset",
+            "fetch_excel_table",
+        )
+        for x in tool_names
+    )
+
+    # same search twice
+    if searches >= 2:
+        return True
+
+    # lots of fetching
+    if fetches >= 3:
+        return True
+
+    # nearing iteration limit
+    if state.iteration >= MAX_ITERATIONS - 2:
+        return True
+
+    return False
+
+
+def ask_llm_without_tools(chat_messages):
+
+    response = client.chat.completions.create(
+        model=MODEL_NAME,
+        messages=chat_messages,
+        temperature=0,
+    )
+
+    return response.choices[0].message
+
+
+MAX_ITERATIONS = 8
+MAX_TOOL_CALLS = 10
 MAX_HISTORY = 30
 
 
@@ -434,6 +486,15 @@ async def run_agent_and_format(
 
         try:
             msg = ask_llm(state.chat_messages)
+            if state.iteration >= 6:
+                state.chat_messages.append(
+                    {
+                        "role": "system",
+                        "content": "This is your final reasoning step.\n"
+                        "You are no longer allowed to use any tools.\n"
+                        "Answer using the evidence already collected.",
+                    }
+                )
 
         except RateLimitError:
             state.final_answer = "null"
@@ -569,20 +630,67 @@ async def run_agent_and_format(
         ##############################################################
         # Force completion after enough evidence
         ##############################################################
+        if should_force_answer(state):
+            evidence = "\n\n".join(state.evidence[-6:])
 
-        if len(state.executed_tools) >= 8 and len(state.evidence) >= 5:
-            summary = "\n\n".join(state.evidence[-5:])
+            final_messages = list(state.chat_messages)
 
-            state.chat_messages.append(
+            final_messages.append(
+                {
+                    "role": "system",
+                    "content": (
+                        "You have enough evidence.\n"
+                        "You are NOT allowed to call tools anymore.\n"
+                        "Use ONLY the collected evidence.\n"
+                        "If the answer cannot be determined, reply with null."
+                    ),
+                }
+            )
+
+            final_messages.append(
                 {
                     "role": "user",
                     "content": (
-                        "Enough evidence has been collected.\n\n"
-                        "Evidence:\n\n"
-                        f"{summary}\n\n"
-                        "Do NOT call any more tools.\n"
-                        "Answer the original question."
+                        f"Evidence:\n\n{evidence}\n\nReturn the final answer now."
                     ),
+                }
+            )
+
+            final_msg = ask_llm_without_tools(final_messages)
+
+            state.final_answer = (final_msg.content or "").strip()
+
+            break
+        # -------------------------------------------------------
+        # Stop endless search/fetch loops
+        # -------------------------------------------------------
+
+        last_tools = [name for name, _ in state.executed_tools[-4:]]
+
+        searches = last_tools.count("web_search_tool")
+        fetches = sum(
+            t
+            in (
+                "web_fetch",
+                "fetch_table_from_url",
+                "fetch_pdf_tables",
+                "fetch_dataset",
+                "fetch_excel_table",
+            )
+            for t in last_tools
+        )
+
+        if searches >= 2 or fetches >= 3:
+            evidence = "\n\n".join(state.evidence[-6:])
+
+            state.chat_messages.append(
+                {
+                    "role": "system",
+                    "content": "STOP USING TOOLS.\n\n"
+                    "You already have enough evidence.\n\n"
+                    f"{evidence}\n\n"
+                    "Your next response MUST be the final answer.\n"
+                    "Do not call another tool.",
                 }
             )
 
