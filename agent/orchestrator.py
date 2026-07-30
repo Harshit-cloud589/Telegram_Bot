@@ -141,16 +141,6 @@ async def run_agent_and_format(
                 result = f"ERROR: unknown tool {fn_name}"
             else:
                 result = with_timeout(fn, 20, **fn_args)
-
-            if log_fn:
-                log_fn(
-                    {
-                        "event": "tool_result",
-                        "tool": fn_name,
-                        "result": str(result)[:2000],
-                    }
-                )
-
             chat_messages.append(
                 {
                     "role": "tool",
