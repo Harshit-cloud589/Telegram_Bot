@@ -56,18 +56,212 @@ def web_search_tool(query: str, **kwargs) -> str:
 
 
 def web_fetch(url: str, **kwargs) -> str:
-    """Fetch and extract the main readable text content of a URL (HTML stripped)."""
+    """
+    Fetch a webpage and return the main readable content.
+
+    The function:
+    - Detects PDFs/images/datasets instead of blindly parsing HTML.
+    - Removes boilerplate.
+    - Extracts page title.
+    - Extracts metadata.
+    - Returns cleaned text.
+    """
+
+    from urllib.parse import urlparse
+
     import requests
     from bs4 import BeautifulSoup
 
+    USER_AGENT = (
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+        "AppleWebKit/537.36 Chrome/139.0 Safari/537.36"
+    )
+
     try:
-        resp = requests.get(url, timeout=20, headers={"User-Agent": "Mozilla/5.0"})
-        resp.raise_for_status()
-        soup = BeautifulSoup(resp.text, "html.parser")
-        for tag in soup(["script", "style", "nav", "footer", "header"]):
+        response = requests.get(
+            url,
+            timeout=20,
+            headers={"User-Agent": USER_AGENT},
+            allow_redirects=True,
+        )
+
+        response.raise_for_status()
+
+        content_type = response.headers.get("Content-Type", "").lower()
+
+        final_url = response.url.lower()
+
+        ####################################################
+        # Detect wrong tool
+        ####################################################
+
+        if ".pdf" in final_url or "application/pdf" in content_type:
+            return "RESOURCE_TYPE=PDF\nUse fetch_pdf_tables() instead."
+
+        if (
+            ".csv" in final_url
+            or ".xlsx" in final_url
+            or ".xls" in final_url
+            or ".json" in final_url
+            or "text/csv" in content_type
+        ):
+            return "RESOURCE_TYPE=DATASET\nUse fetch_dataset() instead."
+
+        if content_type.startswith("image/"):
+            return "RESOURCE_TYPE=IMAGE\nUse analyze_image()."
+
+        ####################################################
+        # Parse HTML
+        ####################################################
+
+        soup = BeautifulSoup(
+            response.text,
+            "lxml",
+        )
+
+        ####################################################
+        # Remove junk
+        ####################################################
+
+        for tag in soup(
+            [
+                "script",
+                "style",
+                "svg",
+                "noscript",
+                "iframe",
+                "header",
+                "footer",
+                "nav",
+                "aside",
+                "form",
+                "button",
+            ]
+        ):
             tag.decompose()
-        text = soup.get_text(separator=" ", strip=True)
-        return text[:8000]  # cap size
+
+        ####################################################
+        # Remove common navigation divs
+        ####################################################
+
+        for node in soup.find_all(True):
+            classes = " ".join(node.get("class", [])).lower()
+
+            ident = (node.get("id") or "").lower()
+
+            junk = (
+                "menu",
+                "nav",
+                "footer",
+                "header",
+                "breadcrumb",
+                "sidebar",
+                "cookie",
+                "banner",
+                "share",
+                "social",
+                "advert",
+                "pagination",
+            )
+
+            if any(x in classes for x in junk):
+                node.decompose()
+                continue
+
+            if any(x in ident for x in junk):
+                node.decompose()
+
+        ####################################################
+        # Metadata
+        ####################################################
+
+        title = ""
+
+        if soup.title:
+            title = soup.title.get_text(strip=True)
+
+        description = ""
+
+        meta = soup.find(
+            "meta",
+            attrs={"name": "description"},
+        )
+
+        if meta:
+            description = meta.get("content", "")
+
+        ####################################################
+        # Main content
+        ####################################################
+
+        article = None
+
+        selectors = [
+            "article",
+            "main",
+            "#content",
+            ".content",
+            ".article",
+            "#main-content",
+            "#main",
+        ]
+
+        for selector in selectors:
+            article = soup.select_one(selector)
+
+            if article:
+                break
+
+        if article is None:
+            article = soup.body
+
+        if article is None:
+            return "ERROR: No readable HTML."
+
+        text = article.get_text(
+            "\n",
+            strip=True,
+        )
+
+        ####################################################
+        # Cleanup
+        ####################################################
+
+        cleaned = []
+
+        seen = set()
+
+        for line in text.splitlines():
+            line = " ".join(line.split())
+
+            if len(line) < 3:
+                continue
+
+            if line in seen:
+                continue
+
+            seen.add(line)
+
+            cleaned.append(line)
+
+        text = "\n".join(cleaned)
+
+        ####################################################
+        # Cap output
+        ####################################################
+
+        MAX_CHARS = 12000
+
+        if len(text) > MAX_CHARS:
+            text = text[:MAX_CHARS]
+
+        return (
+            f"TITLE: {title}\n\n"
+            f"DESCRIPTION: {description}\n\n"
+            f"URL: {response.url}\n\n"
+            f"CONTENT:\n{text}"
+        )
+
     except Exception as e:
         return f"ERROR fetching {url}: {e}"
 

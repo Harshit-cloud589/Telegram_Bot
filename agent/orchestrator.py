@@ -1,5 +1,6 @@
 import os
 import time
+from dataclasses import dataclass, field
 from typing import Any
 
 import google.genai as genai
@@ -262,135 +263,264 @@ def _run_resolved_tool(
     return fn_name, result
 
 
+MAX_ITERATIONS = 15
+MAX_TOOL_CALLS = 25
+MAX_HISTORY = 30
+
+
+@dataclass
+class AgentState:
+    chat_messages: list
+
+    final_answer: str | None = None
+
+    evidence: list[str] = field(default_factory=list)
+
+    visited_urls: set[str] = field(default_factory=set)
+
+    searched_queries: set[str] = field(default_factory=set)
+
+    executed_tools: list[tuple] = field(default_factory=list)
+
+    iteration: int = 0
+
+
+def add_tool_message(state, tc, result):
+
+    text = compress_tool_result(result)
+
+    state.evidence.append(text)
+
+    state.chat_messages.append(
+        {
+            "role": "tool",
+            "tool_call_id": tc.id,
+            "content": text,
+        }
+    )
+
+
+def trim_history(state):
+
+    if len(state.chat_messages) <= MAX_HISTORY:
+        return
+
+    state.chat_messages = [state.chat_messages[0]] + state.chat_messages[
+        -(MAX_HISTORY - 1) :
+    ]
+
+
+def should_stop(state):
+
+    if state.final_answer:
+        return True
+
+    if state.iteration >= MAX_ITERATIONS:
+        return True
+
+    if len(state.executed_tools) >= MAX_TOOL_CALLS:
+        return True
+
+    return False
+
+
+# ============================================================
+# Tool execution
+# ============================================================
+
+
+def execute_tool_call(tc, state, log_fn=None):
+
+    fn_name = tc.function.name
+
+    try:
+        fn_args = json.loads(tc.function.arguments)
+    except Exception:
+        fn_args = {}
+
+    if fn_name == "web_search_tool":
+        q = fn_args.get("query")
+
+        if q:
+            if q in state.searched_queries:
+                return "Search already executed."
+
+            state.searched_queries.add(q)
+
+    if "url" in fn_args:
+        url = fn_args["url"]
+
+        if url in state.visited_urls:
+            return "URL already fetched."
+
+        state.visited_urls.add(url)
+
+    used_name, result = _run_resolved_tool(
+        fn_name,
+        fn_args,
+        log_fn,
+    )
+
+    state.executed_tools.append(
+        (
+            used_name,
+            fn_args,
+        )
+    )
+
+    return result
+
+
+# ============================================================
+# LLM
+# ============================================================
+
+
+def ask_llm(chat_messages):
+
+    response = client.chat.completions.create(
+        model=MODEL_NAME,
+        messages=chat_messages,
+        tools=TOOL_SCHEMAS,
+        temperature=0,
+    )
+
+    return response.choices[0].message
+
+
 async def run_agent_and_format(
-    messages: list[dict], timeout_seconds: int = 60, log_fn=None
+    messages: list[dict],
+    timeout_seconds: int = 60,
+    log_fn=None,
 ) -> dict:
+
     start = time.monotonic()
-    deadline = start + (timeout_seconds * 0.75)
+    deadline = start + timeout_seconds
 
-    chat_messages = build_chat_messages(messages)
+    state = AgentState(chat_messages=build_chat_messages(messages))
 
-    final_text = ""
+    while not should_stop(state):
+        state.iteration += 1
 
-    for iteration in range(5):
-        if time.monotonic() > deadline:
-            # if log_fn:
-            #     log_fn({"event": "budget_exceeded", "iteration": iteration})
+        if time.monotonic() >= deadline:
+            state.final_answer = "null"
             break
+
+        trim_history(state)
 
         try:
-            print(
-                f"[DEBUG] iteration {iteration}, sending {len(chat_messages)} messages:",
-                flush=True,
-            )
-            print(json.dumps(chat_messages, indent=2))
-            for i, m in enumerate(chat_messages):
-                print(f"  [{i}] {json.dumps(m, default=str)[:300]}", flush=True)
-            response = client.chat.completions.create(
-                model=MODEL_NAME,
-                messages=chat_messages,
-                tools=TOOL_SCHEMAS,
-                temperature=0,
-            )
-        except RateLimitError as e:
-            # Never let this crash the handler with no reply. Surface it as
-            # a final answer the formatter can present gracefully.
-            # if log_fn:
-            #     log_fn({"event": "rate_limited", "error": str(e)})
-            final_text = "null"
-            # if log_fn:
-            #     log_fn({"event": "agent_degraded_reply", "reason": "rate_limited"})
+            msg = ask_llm(state.chat_messages)
+
+        except RateLimitError:
+            state.final_answer = "null"
             break
+
         except APIStatusError as e:
             err = str(e)
-            # if log_fn:
-            #     log_fn({"event": "llm_error", "error": err})
 
-            if "tool_use_failed" in err:
-                pseudo = try_extract_failed_generation(e)
-                if pseudo:
-                    fn_name, fn_args = pseudo
-                    # if log_fn:
-                    #     log_fn(
-                    #         {
-                    #             "event": "pseudo_function_call_recovered_from_error",
-                    #             "tool": fn_name,
-                    #             "args": fn_args,
-                    #         }
-                    #     )
-                    used_name, result = _run_resolved_tool(fn_name, fn_args, log_fn)
-                    # We never got an assistant message for this turn (Groq
-                    # rejected it before returning one), so reconstruct a
-                    # minimal one so the tool result has something to attach to.
-                    chat_messages.append(
-                        {
-                            "role": "assistant",
-                            "content": f"<function={fn_name}>{json.dumps(fn_args)}</function>",
-                        }
-                    )
-                    chat_messages.append(
-                        {
-                            "role": "user",
-                            "content": compress_tool_result(
-                                f"Tool result: {result}\n\nNow provide your final answer as valid JSON only."
-                            ),
-                        }
-                    )
-                    continue
-                raise RuntimeError(
-                    f"Groq rejected tool call and no recoverable generation was found:\n{err}"
-                )
-            raise
+            if "tool_use_failed" not in err:
+                raise
 
-        msg = response.choices[0].message
+            pseudo = try_extract_failed_generation(e)
 
-        print("\n================ RESPONSE ================", flush=True)
-        print(json.dumps(msg.model_dump(mode="json"), indent=2), flush=True)
-        print("tool_calls =", getattr(msg, "tool_calls", None), flush=True)
-        print("content =", repr(msg.content), flush=True)
-        print("==========================================\n", flush=True)
+            if pseudo is None:
+                state.final_answer = "null"
+                break
+
+            fn_name, fn_args = pseudo
+
+            class FakeFunction:
+                def __init__(self, name, arguments):
+                    self.name = name
+                    self.arguments = json.dumps(arguments)
+
+            class FakeTool:
+                def __init__(self, name, args):
+                    self.id = "pseudo"
+                    self.function = FakeFunction(name, args)
+
+            fake_tool = FakeTool(fn_name, fn_args)
+
+            result = execute_tool_call(
+                fake_tool,
+                state,
+                log_fn,
+            )
+
+            state.chat_messages.append(
+                {
+                    "role": "assistant",
+                    "content": f"<function={fn_name}>{json.dumps(fn_args)}</function>",
+                }
+            )
+
+            add_tool_message(
+                state,
+                fake_tool,
+                result,
+            )
+
+            continue
+
         tool_calls = getattr(msg, "tool_calls", None)
+
+        ##############################################################
+        # FINAL ANSWER
+        ##############################################################
 
         if not tool_calls:
             content = (msg.content or "").strip()
+
             pseudo = try_parse_pseudo_function_call(content)
+
             if pseudo:
                 fn_name, fn_args = pseudo
-                used_name, result = _run_resolved_tool(
+
+                class FakeFunction:
+                    def __init__(self, name, arguments):
+                        self.name = name
+                        self.arguments = json.dumps(arguments)
+
+                class FakeTool:
+                    def __init__(self, name, args):
+                        self.id = "pseudo"
+                        self.function = FakeFunction(name, args)
+
+                fake_tool = FakeTool(
                     fn_name,
                     fn_args,
+                )
+
+                result = execute_tool_call(
+                    fake_tool,
+                    state,
                     log_fn,
-                    event_name="pseudo_function_call_recovered",
                 )
-                if fn_name == "web_fetch":
-                    url = fn_args["url"].lower()
 
-                if url.endswith(".pdf"):
-                    fn_name = "fetch_pdf_tables"
-
-                elif url.endswith((".xls", ".xlsx")):
-                    fn_name = "fetch_excel_table"
-
-                elif url.endswith((".csv", ".json", ".tsv")):
-                    fn_name = "fetch_dataset"
-                chat_messages.append(
-                    {"role": "assistant", "content": compress_tool_result(content)}
-                )
-                chat_messages.append(
+                state.chat_messages.append(
                     {
-                        "role": "user",
-                        "content": compress_tool_result(
-                            f"Tool result: {result}\n\nNow provide your final answer as valid JSON only."
-                        ),
+                        "role": "assistant",
+                        "content": content,
                     }
                 )
-                continue  # loop again instead of treating this as final
-            final_text = content
+
+                add_tool_message(
+                    state,
+                    fake_tool,
+                    result,
+                )
+
+                continue
+
+            state.final_answer = content
+
             break
 
-        # model wants to call one or more tools — append its request, then run each
-        # IMPORTANT: mode="json" forces enums/objects into plain JSON-safe values
-        chat_messages.append(
+        ##############################################################
+        # TOOL CALLS
+        ##############################################################
+
+        state.chat_messages.append(
             {
                 "role": "assistant",
                 "tool_calls": msg.model_dump(mode="json")["tool_calls"],
@@ -398,29 +528,67 @@ async def run_agent_and_format(
         )
 
         for tc in tool_calls:
-            fn_name = tc.function.name
+            result = execute_tool_call(
+                tc,
+                state,
+                log_fn,
+            )
 
-            try:
-                fn_args = json.loads(tc.function.arguments)
-            except json.JSONDecodeError:
-                fn_args = {}
+            add_tool_message(
+                state,
+                tc,
+                result,
+            )
 
-            _, result = _run_resolved_tool(fn_name, fn_args, log_fn)
+        ##############################################################
+        # Force completion after enough evidence
+        ##############################################################
 
-            chat_messages.append(
+        if len(state.executed_tools) >= 8 and len(state.evidence) >= 5:
+            summary = "\n\n".join(state.evidence[-5:])
+
+            state.chat_messages.append(
                 {
-                    "role": "tool",
-                    "tool_call_id": tc.id,
-                    "content": compress_tool_result(str(result)),
+                    "role": "user",
+                    "content": (
+                        "Enough evidence has been collected.\n\n"
+                        "Evidence:\n\n"
+                        f"{summary}\n\n"
+                        "Do NOT call any more tools.\n"
+                        "Answer the original question."
+                    ),
                 }
             )
 
     elapsed = time.monotonic() - start
+
     print(
-        f"[AGENT] finished in {elapsed:.1f}s, raw output: {final_text[:300]}",
+        f"[AGENT] iterations={state.iteration}",
         flush=True,
     )
 
+    print(
+        f"[AGENT] tools={len(state.executed_tools)}",
+        flush=True,
+    )
+
+    print(
+        f"[AGENT] evidence={len(state.evidence)}",
+        flush=True,
+    )
+
+    print(
+        f"[AGENT] finished in {elapsed:.2f}s",
+        flush=True,
+    )
+
+    answer = state.final_answer
+
+    if not answer:
+        answer = "null"
+
     return format_final_answer(
-        final_text, original_question=messages[-1]["text"], log_url=LOG_URL
+        answer,
+        original_question=messages[-1]["text"],
+        log_url=LOG_URL,
     )
