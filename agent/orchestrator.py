@@ -69,14 +69,25 @@ When a question references MOSPI (Ministry of Statistics and Programme Implement
 """
 
 
+def build_chat_messages(session_messages: list[dict]) -> list[dict]:
+    chat_messages = [{"role": "system", "content": SYSTEM_PROMPT}]
+    for m in session_messages:
+        role = m.get("role")
+        text = m.get("text")
+        if role not in ("user", "assistant") or not isinstance(text, str):
+            print(f"[WARN] skipping malformed session entry: {m}", flush=True)
+            continue
+        chat_messages.append({"role": role, "content": text})
+    return chat_messages
+
+
 async def run_agent_and_format(
     messages: list[dict], timeout_seconds: int = 60, log_fn=None
 ) -> dict:
     start = time.monotonic()
     deadline = start + (timeout_seconds * 0.75)
 
-    chat_messages = [{"role": "system", "content": SYSTEM_PROMPT}]
-    chat_messages += [{"role": m["role"], "content": m["text"]} for m in messages]
+    chat_messages = build_chat_messages(messages)
 
     final_text = ""
 
