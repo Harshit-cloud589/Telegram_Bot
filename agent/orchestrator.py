@@ -343,7 +343,13 @@ async def run_agent_and_format(
             raise
 
         msg = response.choices[0].message
-        tool_calls = getattr(msg, "tool_calls", None)
+
+        print("\n================ RESPONSE ================", flush=True)
+        print(json.dumps(msg.model_dump(mode="json"), indent=2), flush=True)
+        print("tool_calls =", getattr(msg, "tool_calls", None), flush=True)
+        print("content =", repr(msg.content), flush=True)
+        print("==========================================\n", flush=True)
+                tool_calls = getattr(msg, "tool_calls", None)
 
         if not tool_calls:
             content = (msg.content or "").strip()
