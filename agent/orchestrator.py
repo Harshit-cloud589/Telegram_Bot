@@ -97,6 +97,11 @@ DataFrame via get_cached_dataset and compute the exact answer with pandas/numpy.
 If a given URL is a webpage (not a direct file), first use web_fetch to find the actual
 download link (look for .csv, .xlsx, .xls, .json hrefs in the page), then call
 fetch_dataset on that direct file URL.
+IMAGE-BASED QUESTIONS: If a question references or links to an image containing a chart,
+graph, or table (e.g. a URL ending in .png/.jpg, or a page containing such an image), use
+analyze_image to extract the relevant data. For charts, ask analyze_image to read out exact
+axis values and data points. For tables in image form, ask it to transcribe the table content,
+then use run_python to compute on the transcribed numbers if calculation is needed.
 NEVER FABRICATE: Never invent, guess, or hardcode a plausible-looking answer when you don't
 have real data. If a tool fails or returns nothing useful, try a different tool or query — do
 not write code that just prints a guessed literal value instead of using real fetched data.

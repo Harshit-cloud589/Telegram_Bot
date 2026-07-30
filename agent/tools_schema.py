@@ -1,4 +1,5 @@
 from agent.tools_web import (
+    analyze_image,
     datagovin_search,
     fetch_dataset,
     fetch_excel_table,
@@ -132,7 +133,32 @@ TOOL_SCHEMAS.append(
         },
     }
 )
-
+TOOL_SCHEMAS.append(
+    {
+        "type": "function",
+        "function": {
+            "name": "analyze_image",
+            "description": (
+                "Fetch and analyze an image (chart, graph, table, screenshot) from a URL to "
+                "extract data or answer a specific question about its visual content."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "image_url": {
+                        "type": "string",
+                        "description": "Direct URL to the image.",
+                    },
+                    "question": {
+                        "type": "string",
+                        "description": "What to extract or answer about the image.",
+                    },
+                },
+                "required": ["image_url", "question"],
+            },
+        },
+    }
+)
 # map name -> actual callable, for dispatch
 TOOL_FUNCTIONS = {
     "web_fetch": web_fetch,
@@ -142,4 +168,5 @@ TOOL_FUNCTIONS = {
     "web_search_tool": web_search_tool,
     "fetch_pdf_tables": fetch_pdf_tables,
     "fetch_excel_table": fetch_excel_table,
+    "analyze_image": analyze_image,
 }
