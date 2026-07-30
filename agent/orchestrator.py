@@ -87,6 +87,12 @@ async def run_agent_and_format(
             break
 
         try:
+            print(
+                f"[DEBUG] iteration {iteration}, sending {len(chat_messages)} messages:",
+                flush=True,
+            )
+            for i, m in enumerate(chat_messages):
+                print(f"  [{i}] {json.dumps(m, default=str)[:300]}", flush=True)
             response = client.chat.completions.create(
                 model=MODEL_NAME,
                 messages=chat_messages,
@@ -106,16 +112,21 @@ async def run_agent_and_format(
                         "content": "Your last tool call had invalid JSON arguments. Retry the run_python call with the code compressed to a single line using \\n for line breaks, properly JSON-escaped.",
                     }
                 )
-            try:
-                response = client.chat.completions.create(
-                    model=MODEL_NAME, messages=chat_messages, tools=TOOL_SCHEMAS
-                )
-            except Exception as e2:
-                print(f"[AGENT ERROR] {e}")
-                if log_fn:
-                    log_fn({"event": "llm_error", "error": str(e)})
-                break
-
+                try:
+                    response = client.chat.completions.create(
+                        model=MODEL_NAME, messages=chat_messages, tools=TOOL_SCHEMAS
+                    )
+                except Exception as e2:
+                    print(f"[AGENT ERROR] retry also failed: {e2}", flush=True)
+                    if log_fn:
+                        log_fn({"event": "llm_error", "error": str(e2)})
+                    break
+        else:
+            # Not a tool-parse error — don't blindly retry, log the REAL error and stop
+            print(f"[AGENT ERROR] {e}", flush=True)
+            if log_fn:
+                log_fn({"event": "llm_error", "error": err_str})
+            break
         msg = response.choices[0].message
         tool_calls = getattr(msg, "tool_calls", None)
 
@@ -150,7 +161,8 @@ async def run_agent_and_format(
             break
 
         # model wants to call one or more tools — append its request, then run each
-        chat_messages.append(msg.model_dump(exclude_none=True))
+        # IMPORTANT: mode="json" forces enums/objects into plain JSON-safe values
+        chat_messages.append(msg.model_dump(mode="json", exclude_none=True))
 
         for tc in tool_calls:
             fn_name = tc.function.name
@@ -176,7 +188,10 @@ async def run_agent_and_format(
             )
 
     elapsed = time.monotonic() - start
-    print(f"[AGENT] finished in {elapsed:.1f}s, raw output: {final_text[:300]}")
+    print(
+        f"[AGENT] finished in {elapsed:.1f}s, raw output: {final_text[:300]}",
+        flush=True,
+    )
 
     return format_final_answer(
         final_text, original_question=messages[-1]["text"], log_url=LOG_URL
