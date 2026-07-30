@@ -226,19 +226,19 @@ def _run_resolved_tool(
     pseudo-function-call recovery path so they can't drift apart."""
     corrected_name = resolve_fetch_tool(fn_name, fn_args)
     if corrected_name != fn_name:
-        if log_fn:
-            log_fn(
-                {
-                    "event": "tool_rerouted",
-                    "requested": fn_name,
-                    "used": corrected_name,
-                    "args": fn_args,
-                }
-            )
+        # if log_fn:
+        #     log_fn(
+        #         {
+        #             "event": "tool_rerouted",
+        #             "requested": fn_name,
+        #             "m": corrected_name,
+        #             "args": fn_args,
+        #         }
+        #     )
         fn_name = corrected_name
 
-    if log_fn:
-        log_fn({"event": event_name, "tool": fn_name, "args": fn_args})
+    # if log_fn:
+    #     log_fn({"event": event_name, "tool": fn_name, "args": fn_args})
 
     fn = TOOL_FUNCTIONS.get(fn_name)
     if fn is None:
@@ -262,8 +262,8 @@ async def run_agent_and_format(
 
     for iteration in range(5):
         if time.monotonic() > deadline:
-            if log_fn:
-                log_fn({"event": "budget_exceeded", "iteration": iteration})
+            # if log_fn:
+            #     log_fn({"event": "budget_exceeded", "iteration": iteration})
             break
 
         try:
@@ -283,29 +283,29 @@ async def run_agent_and_format(
         except RateLimitError as e:
             # Never let this crash the handler with no reply. Surface it as
             # a final answer the formatter can present gracefully.
-            if log_fn:
-                log_fn({"event": "rate_limited", "error": str(e)})
+            # if log_fn:
+            #     log_fn({"event": "rate_limited", "error": str(e)})
             final_text = "null"
-            if log_fn:
-                log_fn({"event": "agent_degraded_reply", "reason": "rate_limited"})
+            # if log_fn:
+            #     log_fn({"event": "agent_degraded_reply", "reason": "rate_limited"})
             break
         except APIStatusError as e:
             err = str(e)
-            if log_fn:
-                log_fn({"event": "llm_error", "error": err})
+            # if log_fn:
+            #     log_fn({"event": "llm_error", "error": err})
 
             if "tool_use_failed" in err:
                 pseudo = try_extract_failed_generation(e)
                 if pseudo:
                     fn_name, fn_args = pseudo
-                    if log_fn:
-                        log_fn(
-                            {
-                                "event": "pseudo_function_call_recovered_from_error",
-                                "tool": fn_name,
-                                "args": fn_args,
-                            }
-                        )
+                    # if log_fn:
+                    #     log_fn(
+                    #         {
+                    #             "event": "pseudo_function_call_recovered_from_error",
+                    #             "tool": fn_name,
+                    #             "args": fn_args,
+                    #         }
+                    #     )
                     used_name, result = _run_resolved_tool(fn_name, fn_args, log_fn)
                     # We never got an assistant message for this turn (Groq
                     # rejected it before returning one), so reconstruct a
@@ -355,7 +355,12 @@ async def run_agent_and_format(
 
         # model wants to call one or more tools — append its request, then run each
         # IMPORTANT: mode="json" forces enums/objects into plain JSON-safe values
-        chat_messages.append(msg.model_dump(mode="json", exclude_none=True))
+        chat_messages.append(
+            {
+                "role": "assistant",
+                "tool_calls": msg.model_dump(mode="json")["tool_calls"],
+            }
+        )
 
         for tc in tool_calls:
             fn_name = tc.function.name
