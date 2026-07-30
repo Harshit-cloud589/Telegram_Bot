@@ -1,6 +1,5 @@
 from agent.tools_web import (
     analyze_image,
-    datagovin_search,
     fetch_dataset,
     fetch_excel_table,
     fetch_pdf_tables,
@@ -153,21 +152,6 @@ TOOL_SCHEMAS = [
             },
         },
     },
-    {
-        "type": "function",
-        "function": {
-            "name": "datagovin_search",
-            "description": (
-                "Search data.gov.in for official Indian government datasets. "
-                "Prefer this over a web search for Indian government statistics."
-            ),
-            "parameters": {
-                "type": "object",
-                "properties": {"query": {"type": "string"}},
-                "required": ["query"],
-            },
-        },
-    },
 ]
 
 TOOL_FUNCTIONS = {
@@ -179,5 +163,4 @@ TOOL_FUNCTIONS = {
     "fetch_dataset": fetch_dataset,
     "run_python": run_python,
     "analyze_image": analyze_image,
-    "datagovin_search": datagovin_search,
 }
