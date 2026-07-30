@@ -332,9 +332,11 @@ def should_stop(state):
 def execute_tool_call(tc, state, log_fn=None):
 
     fn_name = tc.function.name
+    print(f"[TOOL] {fn_name}")
 
     try:
         fn_args = json.loads(tc.function.arguments)
+
     except Exception:
         fn_args = {}
 
@@ -360,14 +362,14 @@ def execute_tool_call(tc, state, log_fn=None):
         fn_args,
         log_fn,
     )
-
+    print(result[:1000] if isinstance(result, str) else result)
     state.executed_tools.append(
         (
             used_name,
             fn_args,
         )
     )
-
+    print(state.chat_messages[-1])
     return result
 
 
@@ -461,7 +463,9 @@ async def run_agent_and_format(
             )
 
             continue
-
+        print("=" * 80)
+        print(msg.model_dump(mode="json"))
+        print("=" * 80)
         tool_calls = getattr(msg, "tool_calls", None)
 
         ##############################################################
