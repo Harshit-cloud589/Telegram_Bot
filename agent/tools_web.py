@@ -13,6 +13,14 @@ from groq import Groq
 
 load_dotenv()
 
+FORBIDDEN_PATTERNS = [
+    "requests.get",
+    "requests.post",
+    "BeautifulSoup",
+    "urllib.request",
+    "from web_fetch",
+]
+
 
 def with_timeout(fn, timeout_s, *args, **kwargs):
     with concurrent.futures.ThreadPoolExecutor(max_workers=1) as ex:
@@ -84,6 +92,14 @@ def get_cached_dataset(url: str):
 
 
 def run_python(code: str) -> str:
+    for pattern in FORBIDDEN_PATTERNS:
+        if pattern in code:
+            return (
+                f"ERROR: run_python cannot make web requests directly. "
+                f"Use web_fetch(url), web_search_tool(query), fetch_dataset(url), "
+                f"or fetch_pdf_tables(url) instead, then pass the RESULT into run_python."
+            )
+
     """Execute a Python snippet. pandas/numpy/statistics available. If a dataset was
     previously fetched via fetch_dataset, load it with get_cached_dataset(url).
     Print the final result — only stdout is captured.
