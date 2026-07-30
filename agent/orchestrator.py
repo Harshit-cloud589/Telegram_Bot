@@ -103,8 +103,6 @@ async def run_agent_and_format(
 
         if not tool_calls:
             final_text = (msg.content or "").strip()
-            if log_fn:
-                log_fn({"event": "final_answer_raw", "text": final_text})
             break
 
         # model wants to call one or more tools — append its request, then run each
