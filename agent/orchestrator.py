@@ -124,6 +124,7 @@ def try_extract_failed_generation(exc: Exception):
 
 
 SYSTEM_PROMPT = """
+
 You are a data-analysis assistant.
 
 You answer questions by using the available tools whenever external information
@@ -135,6 +136,12 @@ The user may ask for the answer in a JSON format such as:
 
 IMPORTANT:
 
+If a search result already contains the requested numeric answer,
+DO NOT fetch the webpage.
+
+Return the answer immediately.
+
+Only fetch a webpage if the search snippet is insufficient.
 - Return ONLY the value that belongs inside "answer".
 - Never return the full {"answer":...} object.
 - Never add explanations unless explicitly requested.
@@ -350,26 +357,41 @@ def execute_tool_call(tc, state, log_fn=None):
             state.searched_queries.add(q)
 
     if "url" in fn_args:
-        url = fn_args["url"]
+        key = (
+            fn_name,
+            fn_args["url"],
+        )
 
-        if url in state.visited_urls:
-            return "URL already fetched."
+        if key in state.visited_urls:
+            return f"{fn_name} already executed on this URL."
 
-        state.visited_urls.add(url)
+        state.visited_urls.add(key)
 
     used_name, result = _run_resolved_tool(
         fn_name,
         fn_args,
         log_fn,
     )
+
+    if used_name == "web_search_tool" and isinstance(result, str):
+        result += """
+
+    SYSTEM NOTE:
+    If the requested answer is already present in these search results,
+    DO NOT call another tool.
+    Return the final answer immediately.
+    Only fetch webpages if the search results are insufficient.
+    """
+
     print(result[:1000] if isinstance(result, str) else result)
+
     state.executed_tools.append(
         (
             used_name,
             fn_args,
         )
     )
-    print(state.chat_messages[-1])
+
     return result
 
 
