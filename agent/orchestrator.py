@@ -48,6 +48,19 @@ Rules:
 3. Use tools to fetch real data and compute exact answers — never guess numbers.
 4. Output nothing else — no markdown fences, no commentary, no surrounding envelope.
 
+FOCUS AND EFFICIENCY:
+5. Stay strictly focused on exactly what the question asks. Do NOT research or fetch
+   information unrelated to the specific question — e.g. if asked for a country's capital,
+   do not also look up its GDP, exports, or other unrelated facts.
+6. As soon as you have found the specific information needed to answer the question, STOP
+   calling tools and provide your final answer immediately. Do not continue gathering
+   additional information "just in case."
+7. Before giving your final answer, re-read the original question one more time and confirm
+   your answer directly and specifically addresses what was asked — not a tangential fact you
+   happened to find along the way.
+8. Each run_python call executes in a fresh, isolated environment — variables and imports
+   from previous calls are NOT available. Write each code snippet to be fully self-contained.
+
 When a question references MOSPI (Ministry of Statistics and Programme Implementation) data:
 1. Prefer these official entry points over generic search results:
    - https://www.mospi.gov.in/ (main site)
@@ -66,6 +79,12 @@ When a question references MOSPI (Ministry of Statistics and Programme Implement
    - Annual Survey of Industries (ASI) → mospi.gov.in, "Industrial Statistics" section
 5. If you cannot locate exact primary data after 2-3 search attempts, state your best estimate
    clearly is uncertain rather than fabricating a precise-looking number.
+
+NEVER FABRICATE: Never invent, guess, or hardcode a plausible-looking answer when you don't
+have real data. If a tool fails or returns nothing useful, try a different tool or query — do
+not write code that just prints a guessed literal value instead of using real fetched data.
+If you truly cannot find the answer after genuine attempts, respond with {"answer": null}
+rather than inventing a number or name.
 """
 
 
@@ -91,7 +110,7 @@ async def run_agent_and_format(
 
     final_text = ""
 
-    for iteration in range(8):  # max tool-call iterations
+    for iteration in range(5):  # max tool-call iterations
         if time.monotonic() > deadline:
             if log_fn:
                 log_fn({"event": "budget_exceeded", "iteration": iteration})
