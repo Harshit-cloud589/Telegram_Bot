@@ -38,8 +38,11 @@ async def handle_message(event, context=None) -> dict:
 
     session["messages"].append({"role": "user", "text": text, "ts": time.time()})
 
-    print(f"[RECEIVED] chat_id={chat_id} msg_id={message_id} text={text!r}")
-    print(f"[DEBUG] expects_json_reply({text!r}) = {expects_json_reply(text)}")
+    print(f"[RECEIVED] chat_id={chat_id} msg_id={message_id} text={text!r}", flush=True)
+    print(
+        f"[DEBUG] expects_json_reply({text!r}) = {expects_json_reply(text)}", flush=True
+    )
+
     if expects_json_reply(text):
         # Final turn — run the real agent pipeline and produce the strict answer.
         log_fn, log_buffer = make_logger(chat_id, qid=message_id)
@@ -48,17 +51,21 @@ async def handle_message(event, context=None) -> dict:
             timeout_seconds=60,
             log_fn=log_fn,
         )
-        log_fn({"event": "final_answer", "answer": answer_payload})
+        log_fn({"event": "final_answer", "reply": answer_payload})
 
         # flush to public bucket BEFORE sending the Telegram reply
         flush_log(log_buffer)
-        session["messages"].append(
-            {"role": "git assistant", "text": str(answer_payload)}
-        )
+
         answer_payload["log_url"] = LOG_URL
+
+        # RESET — this question has been fully answered. Clear history so the
+        # NEXT incoming message starts a clean, isolated context instead of
+        # accumulating every past question's tool calls/data forever.
+        session["messages"] = []
+
         return answer_payload  # e.g. {"answer": ..., "log_url": "..."}
     else:
         # Intermediate turn — acknowledge, don't emit the final answer shape yet.
-        ack = {"status": "received"}
-        session["messages"].append({"role": "assistant", "text": str(ack)})
-        return ack
+        # (Not appending an assistant ack to history — it's not needed for the
+        # agent's reasoning and only adds noise/tokens.)
+        return {"status": "received"}
