@@ -73,14 +73,17 @@ def make_logger(chat_id: int, qid: str = None) -> tuple[callable, list]:
     return log_fn, buffer
 
 
-async def flush_log(buffer: list):
+def flush_log_sync(buffer: list):
     try:
-        await append_log_lines(buffer)
+        append_log_lines(buffer)
     except Exception as e:
         print(f"[LOG ERROR] failed to upload: {e}")
-        # Don't raise — the bot must still reply. Log locally as a fallback.
         with open("fallback_log.jsonl", "a") as f:
             for entry in buffer:
                 f.write(json.dumps(entry, default=str) + "\n")
     finally:
         buffer.clear()
+
+
+async def flush_log(buffer: list):
+    await asyncio.to_thread(flush_log_sync, buffer)
