@@ -79,7 +79,9 @@ When a question references MOSPI (Ministry of Statistics and Programme Implement
    - Annual Survey of Industries (ASI) → mospi.gov.in, "Industrial Statistics" section
 5. If you cannot locate exact primary data after 2-3 search attempts, state your best estimate
    clearly is uncertain rather than fabricating a precise-looking number.
-
+When computing standard deviation or variance, use SAMPLE statistics (dividing by N-1,
+i.e. Python's statistics.stdev / statistics.variance or pandas' default .std()/.var()),
+unless the question explicitly asks for population statistics.
 NEVER FABRICATE: Never invent, guess, or hardcode a plausible-looking answer when you don't
 have real data. If a tool fails or returns nothing useful, try a different tool or query — do
 not write code that just prints a guessed literal value instead of using real fetched data.
@@ -110,7 +112,16 @@ async def run_agent_and_format(
 
     final_text = ""
 
-    for iteration in range(5):  # max tool-call iterations
+    for iteration in range(3):
+        if iteration <= 1 and any(
+            "ERROR" not in str(r) for r in [tc for tc in chat_messages[-1:]]
+        ):
+            chat_messages.append(
+                {
+                    "role": "user",
+                    "content": "You likely already have enough information to answer now. If so, respond with ONLY the final JSON answer immediately — do not search for anything else.",
+                }
+            )  # max tool-call iterations
         if time.monotonic() > deadline:
             if log_fn:
                 log_fn({"event": "budget_exceeded", "iteration": iteration})
