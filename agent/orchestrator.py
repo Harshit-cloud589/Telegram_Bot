@@ -150,23 +150,7 @@ async def run_agent_and_format(
             break
 
         # model wants to call one or more tools — append its request, then run each
-        chat_messages.append(
-            {
-                "role": "assistant",
-                "content": msg.content,
-                "tool_calls": [
-                    {
-                        "id": tc.id,
-                        "type": "function",
-                        "function": {
-                            "name": tc.function.name,
-                            "arguments": tc.function.arguments,
-                        },
-                    }
-                    for tc in tool_calls
-                ],
-            }
-        )
+        chat_messages.append(msg.model_dump(exclude_none=True))
 
         for tc in tool_calls:
             fn_name = tc.function.name
