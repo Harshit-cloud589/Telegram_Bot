@@ -3,31 +3,79 @@ import re
 
 
 def extract_json_value(raw_text: str):
-    """Try to parse raw_text as JSON. Strip markdown fences if present."""
+    """Extract JSON from model output, removing markdown fences if present."""
+
     text = raw_text.strip()
-    # strip ```json ... ``` or ``` ... ``` fences if the model added them anyway
-    text = re.sub(r"^```(?:json)?\s*|\s*```$", "", text, flags=re.MULTILINE).strip()
+
+    # Remove ```json ... ``` or ``` ... ```
+    text = re.sub(
+        r"^```(?:json)?\s*",
+        "",
+        text,
+        flags=re.IGNORECASE,
+    )
+
+    text = re.sub(
+        r"\s*```$",
+        "",
+        text,
+    )
+
+    text = text.strip()
+
     return json.loads(text)
 
 
 def format_final_answer(raw_text: str, original_question: str, log_url: str) -> dict:
+    """
+    Convert the model's raw response into the required API format.
+
+    The model is instructed to return ONLY the value that belongs
+    inside "answer". This function wraps it with log_url.
+    """
+
     try:
         answer_value = extract_json_value(raw_text)
+
     except Exception as e:
-        print(f"[FORMAT ERROR] could not parse model output as JSON: {e}")
-        answer_value = None  # fallback: raw string, better than crashing
+        print(f"[FORMAT ERROR] {e}")
 
-    # Safety net: if the model ignored instructions and STILL wrapped it in
-    # {"answer": ...}, unwrap one level automatically rather than double-nesting.
-    if isinstance(answer_value, dict) and set(answer_value.keys()) == {"answer"}:
-        print("[FORMAT WARN] model double-wrapped answer, auto-unwrapping")
-        answer_value = answer_value["answer"]
-    elif (
-        isinstance(answer_value, dict)
-        and "answer" in answer_value
-        and "log_url" in answer_value
-    ):
-        print("[FORMAT WARN] model emitted full envelope, auto-unwrapping")
-        answer_value = answer_value["answer"]
+        # Fallbacks
 
-    return {"answer": answer_value, "log_url": log_url}
+        text = raw_text.strip()
+
+        # number
+        try:
+            answer_value = int(text)
+        except ValueError:
+            try:
+                answer_value = float(text)
+            except ValueError:
+                # true / false
+                if text.lower() == "true":
+                    answer_value = True
+
+                elif text.lower() == "false":
+                    answer_value = False
+
+                elif text.lower() == "null":
+                    answer_value = None
+
+                else:
+                    # plain string
+                    answer_value = text
+
+    # Model accidentally returned {"answer": ...}
+    if isinstance(answer_value, dict):
+        if set(answer_value.keys()) == {"answer"}:
+            print("[FORMAT] Auto-unwrapped answer")
+            answer_value = answer_value["answer"]
+
+        elif "answer" in answer_value and "log_url" in answer_value:
+            print("[FORMAT] Auto-unwrapped full envelope")
+            answer_value = answer_value["answer"]
+
+    return {
+        "answer": answer_value,
+        "log_url": log_url,
+    }

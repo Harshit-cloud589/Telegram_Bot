@@ -11,12 +11,20 @@ from logger import LOG_URL
 # client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
 client = Groq(api_key=os.getenv("GROQ_API_KEY"))
 MODEL_NAME = "llama-3.3-70b-versatile"
+import inspect
 import json
 import re
 import time
 
 from agent.tools_schema import TOOL_FUNCTIONS, TOOL_SCHEMAS
 from agent.tools_web import with_timeout
+
+
+def clean_tool_args(fn, args):
+
+    sig = inspect.signature(fn)
+
+    return {k: v for k, v in args.items() if k in sig.parameters}
 
 
 def try_parse_pseudo_function_call(text: str):
@@ -175,16 +183,7 @@ async def run_agent_and_format(
 
     final_text = ""
 
-    for iteration in range(3):
-        if iteration <= 1 and any(
-            "ERROR" not in str(r) for r in [tc for tc in chat_messages[-1:]]
-        ):
-            chat_messages.append(
-                {
-                    "role": "user",
-                    "content": "You likely already have enough information to answer now. If so, respond with ONLY the final JSON answer immediately — do not search for anything else.",
-                }
-            )  # max tool-call iterations
+    for iteration in range(5):
         if time.monotonic() > deadline:
             if log_fn:
                 log_fn({"event": "budget_exceeded", "iteration": iteration})
@@ -201,36 +200,48 @@ async def run_agent_and_format(
                 model=MODEL_NAME,
                 messages=chat_messages,
                 tools=TOOL_SCHEMAS,
+                temperature=0,
             )
         except Exception as e:
-            err_str = str(e)
-            if (
-                "tool_use_failed" in err_str
-                or "Failed to parse tool call arguments" in err_str
-            ):
-                if log_fn:
-                    log_fn({"event": "tool_parse_retry", "error": err_str[:500]})
+            err = str(e)
+
+            if log_fn:
+                log_fn({"event": "llm_error", "error": err})
+
+            # Groq frequently emits malformed XML tool calls.
+            # Tell the model exactly how to recover.
+
+            if "tool_use_failed" in err:
+                chat_messages.append(
+                    {
+                        "role": "assistant",
+                        "content": "Your previous tool call was malformed.",
+                    }
+                )
+
                 chat_messages.append(
                     {
                         "role": "user",
-                        "content": "Your last tool call had invalid JSON arguments. Retry the run_python call with the code compressed to a single line using \\n for line breaks, properly JSON-escaped.",
+                        "content": """
+                    Your previous function call was invalid.
+
+                    Call ONE tool only.
+
+                    Use ONLY the tools provided.
+
+                    Do not invent parameters.
+
+                    Do not output XML.
+
+                    Do not output <function=...>.
+
+                    Use the native tool calling format.
+                    """,
                     }
                 )
-                try:
-                    response = client.chat.completions.create(
-                        model=MODEL_NAME, messages=chat_messages, tools=TOOL_SCHEMAS
-                    )
-                except Exception as e2:
-                    print(f"[AGENT ERROR] retry also failed: {e2}", flush=True)
-                    if log_fn:
-                        log_fn({"event": "llm_error", "error": str(e2)})
-                    break
-            else:
-                # Not a tool-parse error — don't blindly retry, log the REAL error and stop
-                print(f"[AGENT ERROR] {err_str}", flush=True)
-                if log_fn:
-                    log_fn({"event": "llm_error", "error": err_str})
-                break
+                continue
+            break
+
         msg = response.choices[0].message
         tool_calls = getattr(msg, "tool_calls", None)
 
@@ -270,19 +281,26 @@ async def run_agent_and_format(
 
         for tc in tool_calls:
             fn_name = tc.function.name
+
             try:
                 fn_args = json.loads(tc.function.arguments)
-            except Exception:
+            except json.JSONDecodeError:
                 fn_args = {}
 
             if log_fn:
                 log_fn({"event": "tool_call", "tool": fn_name, "args": fn_args})
 
             fn = TOOL_FUNCTIONS.get(fn_name)
+
             if fn is None:
                 result = f"ERROR: unknown tool {fn_name}"
+
             else:
+                # ⭐ Remove hallucinated arguments
+                fn_args = clean_tool_args(fn, fn_args)
+
                 result = with_timeout(fn, 20, **fn_args)
+
             chat_messages.append(
                 {
                     "role": "tool",

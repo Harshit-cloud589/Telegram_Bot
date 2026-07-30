@@ -31,7 +31,7 @@ def with_timeout(fn, timeout_s, *args, **kwargs):
             return f"ERROR: tool timed out after {timeout_s}s"
 
 
-def web_search_tool(query: str) -> str:
+def web_search_tool(query: str, **kwargs) -> str:
     api_key = os.getenv("SERPER_API_KEY", "")
     if not api_key:
         return "ERROR: SERPER_API_KEY not configured"
@@ -55,7 +55,7 @@ def web_search_tool(query: str) -> str:
         return f"ERROR searching: {e}"
 
 
-def web_fetch(url: str) -> str:
+def web_fetch(url: str, **kwargs) -> str:
     """Fetch and extract the main readable text content of a URL (HTML stripped)."""
     import requests
     from bs4 import BeautifulSoup
@@ -72,7 +72,7 @@ def web_fetch(url: str) -> str:
         return f"ERROR fetching {url}: {e}"
 
 
-def fetch_table_from_url(url: str, table_index: int = 0) -> str:
+def fetch_table_from_url(url: str, table_index: int = 0, **kwargs) -> str:
     """Fetch a URL and parse the Nth HTML table on the page into CSV text.
 
     Args:
@@ -91,7 +91,7 @@ def get_cached_dataset(url: str):
     return _dataset_cache.get(url)
 
 
-def run_python(code: str) -> str:
+def run_python(code: str, **kwargs) -> str:
     for pattern in FORBIDDEN_PATTERNS:
         if pattern in code:
             return (
@@ -123,7 +123,7 @@ def run_python(code: str) -> str:
         return f"ERROR executing code: {e}"
 
 
-def fetch_pdf_tables(url: str) -> str:
+def fetch_pdf_tables(url: str, **kwargs) -> str:
     """Fetch a PDF from a URL and extract all tables into CSV text.
 
     Args:
@@ -146,7 +146,7 @@ def fetch_pdf_tables(url: str) -> str:
         return f"ERROR parsing PDF {url}: {e}"
 
 
-def fetch_excel_table(url: str) -> str:
+def fetch_excel_table(url: str, **kwargs) -> str:
     """Download an Excel file and return its contents as CSV text.
 
     Args:
@@ -156,13 +156,15 @@ def fetch_excel_table(url: str) -> str:
     try:
         resp = requests.get(url, timeout=30, headers={"User-Agent": "Mozilla/5.0"})
         resp.raise_for_status()
-        df = pd.read_excel(io.BytesIO(resp.content), sheet_name=sheet_name or 0)
+        df = pd.read_excel(
+            io.BytesIO(resp.content), sheet_name=kwargs.get("sheet_name") or 0
+        )
         return df.to_csv(index=False)[:10000]  # cap size
     except Exception as e:
         return f"ERROR parsing Excel {url}: {e}"
 
 
-def datagovin_search(query: str) -> str:
+def datagovin_search(query: str, **kwargs) -> str:
     """Search data.gov.in's open data catalog for a dataset matching the query.
 
     Args:
@@ -180,7 +182,7 @@ def datagovin_search(query: str) -> str:
     return resp.text[:5000]
 
 
-def fetch_dataset(url: str) -> str:
+def fetch_dataset(url: str, **kwargs) -> str:
     """Download a CSV, Excel, JSON, or TSV file from a URL and return a preview
     (column names, dtypes, first 10 rows) so you can plan how to analyze it.
     Use this whenever a question links to a downloadable dataset file.
@@ -233,7 +235,7 @@ def fetch_dataset(url: str) -> str:
 _dataset_cache: dict[str, "pd.DataFrame"] = {}
 
 
-def analyze_image(image_url: str, question: str) -> str:
+def analyze_image(image_url: str, question: str, **kwargs) -> str:
     """Fetch an image (chart, graph, table, screenshot) from a URL and analyze it
     using a vision-capable model to extract data or answer a question about it.
 

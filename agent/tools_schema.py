@@ -14,14 +14,36 @@ TOOL_SCHEMAS = [
     {
         "type": "function",
         "function": {
-            "name": "web_fetch",
-            "description": "Fetch webpage text.If the requested answer is explicitly present in the page, return it directly without using run_python.",
+            "name": "web_search_tool",
+            "description": (
+                "Search the web for relevant pages. "
+                "Use ONLY when the URL is unknown. "
+                "After finding a page, use web_fetch, fetch_dataset, "
+                "fetch_pdf_tables or fetch_excel_table."
+            ),
             "parameters": {
                 "type": "object",
-                "properties": {
-                    "url": {"type": "string", "description": "The full URL to fetch."}
-                },
+                "properties": {"query": {"type": "string"}},
+                "required": ["query"],
+                "additionalProperties": False,
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "web_fetch",
+            "description": (
+                "Fetch readable text from an HTML webpage. "
+                "If the requested answer appears directly in the page, "
+                "return it immediately. "
+                "Do NOT use run_python unless actual calculations are needed."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {"url": {"type": "string"}},
                 "required": ["url"],
+                "additionalProperties": False,
             },
         },
     },
@@ -29,18 +51,72 @@ TOOL_SCHEMAS = [
         "type": "function",
         "function": {
             "name": "fetch_table_from_url",
-            "description": "Fetch a URL and parse the Nth HTML table on the page into CSV text.",
+            "description": (
+                "Extract an HTML table from a webpage. "
+                "Use ONLY if the page contains HTML tables."
+            ),
             "parameters": {
                 "type": "object",
                 "properties": {
                     "url": {"type": "string"},
                     "table_index": {
                         "type": "integer",
-                        "description": "0-indexed table position",
                         "default": 0,
                     },
                 },
                 "required": ["url"],
+                "additionalProperties": False,
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "fetch_pdf_tables",
+            "description": (
+                "Download a PDF and extract tables. "
+                "If the answer appears directly in an extracted table, "
+                "return it without using run_python."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {"url": {"type": "string"}},
+                "required": ["url"],
+                "additionalProperties": False,
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "fetch_excel_table",
+            "description": ("Download an Excel file and extract its contents."),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "url": {"type": "string"},
+                    "sheet_name": {"type": "string"},
+                },
+                "required": ["url"],
+                "additionalProperties": False,
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "fetch_dataset",
+            "description": (
+                "Download a CSV, TSV, Excel or JSON dataset. "
+                "Cache the dataframe. "
+                "Always call this BEFORE run_python for downloadable datasets. "
+                "Never answer from the preview."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {"url": {"type": "string"}},
+                "required": ["url"],
+                "additionalProperties": False,
             },
         },
     },
@@ -49,125 +125,68 @@ TOOL_SCHEMAS = [
         "function": {
             "name": "run_python",
             "description": (
-                "Execute Python ONLY for mathematical or dataframe computations"
-                "Never use this tool to read webpages, extract values from text or scrape HTML"
-                "must be a valid JSON string — use \\n for newlines, do not include raw line breaks. "
-                "Keep code compact; prefer semicolons or a single expression where possible. "
-                "Always end with a print() statement for the result — only stdout is captured."
+                "Execute Python ONLY for dataframe analysis or mathematical computation. "
+                "Never use for webpages, HTML, PDFs, searching, or text extraction. "
+                "Use after fetch_dataset or after data has already been extracted. "
+                "Always finish with print(...)."
             ),
             "parameters": {
                 "type": "object",
-                "properties": {
-                    "code": {
-                        "type": "string",
-                        "description": "Python source, JSON-escaped, must end with print(...)",
-                    }
-                },
+                "properties": {"code": {"type": "string"}},
                 "required": ["code"],
+                "additionalProperties": False,
             },
         },
     },
-    {
-        "type": "function",
-        "function": {
-            "name": "web_search_tool",
-            "description": "Search the web for a query and return top result URLs + snippets. Use to locate MOSPI/data.gov.in pages before fetching.",
-            "parameters": {
-                "type": "object",
-                "properties": {"query": {"type": "string"}},
-                "required": ["query"],
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "fetch_pdf_tables",
-            "description": "Download a PDF and extract tables from it as CSV text. Use for MOSPI PDF releases.",
-            "parameters": {
-                "type": "object",
-                "properties": {"url": {"type": "string"}},
-                "required": ["url"],
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "fetch_excel_table",
-            "description": "Download an Excel file and return its contents as CSV text.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "url": {"type": "string"},
-                    "sheet_name": {
-                        "type": "string",
-                        "description": "Optional sheet name",
-                    },
-                },
-                "required": ["url"],
-            },
-        },
-    },
-]
-TOOL_SCHEMAS.append(
-    {
-        "type": "function",
-        "function": {
-            "name": "fetch_dataset",
-            "description": (
-                "Download a CSV/Excel/JSON/TSV file from a URL and return a preview "
-                "(columns, dtypes, sample rows). The full dataset is cached and can be "
-                "loaded in run_python via get_cached_dataset(url) for real analysis. "
-                "Use this whenever a question links to a downloadable data file."
-            ),
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "url": {
-                        "type": "string",
-                        "description": "Direct URL to the data file.",
-                    }
-                },
-                "required": ["url"],
-            },
-        },
-    }
-)
-TOOL_SCHEMAS.append(
     {
         "type": "function",
         "function": {
             "name": "analyze_image",
             "description": (
-                "Fetch and analyze an image (chart, graph, table, screenshot) from a URL to "
-                "extract data or answer a specific question about its visual content."
+                "Analyze a chart, graph, screenshot or table image. "
+                "Extract values or answer questions from the image. "
+                "Use run_python afterwards only if calculations are required."
             ),
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "image_url": {
-                        "type": "string",
-                        "description": "Direct URL to the image.",
-                    },
-                    "question": {
-                        "type": "string",
-                        "description": "What to extract or answer about the image.",
-                    },
+                    "image_url": {"type": "string"},
+                    "question": {"type": "string"},
                 },
-                "required": ["image_url", "question"],
+                "required": [
+                    "image_url",
+                    "question",
+                ],
+                "additionalProperties": False,
             },
         },
-    }
-)
-# map name -> actual callable, for dispatch
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "datagovin_search",
+            "description": (
+                "Search data.gov.in for official Indian government datasets. "
+                "Prefer this over a web search for Indian government statistics."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {"query": {"type": "string"}},
+                "required": ["query"],
+                "additionalProperties": False,
+            },
+        },
+    },
+]
+
 TOOL_FUNCTIONS = {
+    "web_search_tool": web_search_tool,
     "web_fetch": web_fetch,
     "fetch_table_from_url": fetch_table_from_url,
-    "run_python": run_python,
-    "fetch_dataset": fetch_dataset,
-    "web_search_tool": web_search_tool,
     "fetch_pdf_tables": fetch_pdf_tables,
     "fetch_excel_table": fetch_excel_table,
+    "fetch_dataset": fetch_dataset,
+    "run_python": run_python,
     "analyze_image": analyze_image,
+    "datagovin_search": datagovin_search,
 }
