@@ -121,12 +121,12 @@ async def run_agent_and_format(
                     if log_fn:
                         log_fn({"event": "llm_error", "error": str(e2)})
                     break
-        else:
-            # Not a tool-parse error — don't blindly retry, log the REAL error and stop
-            print(f"[AGENT ERROR] {e}", flush=True)
-            if log_fn:
-                log_fn({"event": "llm_error", "error": err_str})
-            break
+            else:
+                # Not a tool-parse error — don't blindly retry, log the REAL error and stop
+                print(f"[AGENT ERROR] {err_str}", flush=True)
+                if log_fn:
+                    log_fn({"event": "llm_error", "error": err_str})
+                break
         msg = response.choices[0].message
         tool_calls = getattr(msg, "tool_calls", None)
 
