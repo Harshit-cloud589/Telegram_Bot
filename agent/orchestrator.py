@@ -20,10 +20,22 @@ from urllib.parse import urlparse
 from agent.tools_schema import TOOL_FUNCTIONS, TOOL_SCHEMAS
 from agent.tools_web import with_timeout
 
+
 # ---------------------------------------------------------------------------
 # Deterministic tool routing — don't trust the LLM for things we can check
 # from the URL/extension alone.
 # ---------------------------------------------------------------------------
+def compress_tool_result(result, limit=600):
+    text = str(result).strip()
+
+    if len(text) <= limit:
+        return text
+
+    lines = text.splitlines()
+
+    # keep only first few useful lines
+    return "\n".join(lines[:8])[:limit] + "\n...[truncated]"
+
 
 FETCH_FAMILY = {
     "web_fetch",
@@ -214,7 +226,7 @@ def build_chat_messages(session_messages: list[dict]) -> list[dict]:
         if role not in ("user", "assistant") or not isinstance(text, str):
             print(f"[WARN] skipping malformed session entry: {m}", flush=True)
             continue
-        chat_messages.append({"role": role, "content": text})
+        chat_messages.append({"role": role, "content": compress_tool_result(text)})
     return chat_messages
 
 
@@ -319,7 +331,9 @@ async def run_agent_and_format(
                     chat_messages.append(
                         {
                             "role": "user",
-                            "content": f"Tool result: {result}\n\nNow provide your final answer as valid JSON only.",
+                            "content": compress_tool_result(
+                                f"Tool result: {result}\n\nNow provide your final answer as valid JSON only."
+                            ),
                         }
                     )
                     continue
@@ -342,11 +356,26 @@ async def run_agent_and_format(
                     log_fn,
                     event_name="pseudo_function_call_recovered",
                 )
-                chat_messages.append({"role": "assistant", "content": content})
+                if fn_name == "web_fetch":
+                    url = fn_args["url"].lower()
+
+                if url.endswith(".pdf"):
+                    fn_name = "fetch_pdf_tables"
+
+                elif url.endswith((".xls", ".xlsx")):
+                    fn_name = "fetch_excel_table"
+
+                elif url.endswith((".csv", ".json", ".tsv")):
+                    fn_name = "fetch_dataset"
+                chat_messages.append(
+                    {"role": "assistant", "content": compress_tool_result(content)}
+                )
                 chat_messages.append(
                     {
                         "role": "user",
-                        "content": f"Tool result: {result}\n\nNow provide your final answer as valid JSON only.",
+                        "content": compress_tool_result(
+                            f"Tool result: {result}\n\nNow provide your final answer as valid JSON only."
+                        ),
                     }
                 )
                 continue  # loop again instead of treating this as final
@@ -376,7 +405,7 @@ async def run_agent_and_format(
                 {
                     "role": "tool",
                     "tool_call_id": tc.id,
-                    "content": str(result),
+                    "content": compress_tool_result(str(result)),
                 }
             )
 
