@@ -45,13 +45,31 @@ def append_log_lines(entries: list[dict]):
     with _lock:
         blob = _bucket.blob(OBJECT_NAME)
         try:
+            blob.reload()  # get current metadata, including generation number
             existing = blob.download_as_text()
+            current_generation = blob.generation
         except Exception:
             existing = ""
+            current_generation = 0  # object doesn't exist yet
 
-        new_content = existing + (lines + "\n")
-        blob.cache_control = "no-cache, no-store, max-age=0"
-        blob.upload_from_string(new_content, content_type="application/x-ndjson")
+        new_content = existing + lines + "\n"
+        try:
+            blob.upload_from_string(
+                new_content,
+                content_type="application/x-ndjson",
+                if_generation_match=current_generation,
+            )
+        except Exception as e:
+            print(f"[GCS] generation mismatch, retrying: {e}")
+            # retry once: re-read fresh and re-append
+            blob.reload()
+            existing = blob.download_as_text()
+            new_content = existing + lines + "\n"
+            blob.upload_from_string(
+                new_content,
+                content_type="application/x-ndjson",
+                if_generation_match=blob.generation,
+            )
 
 
 def make_logger(chat_id: int, qid: str = None) -> tuple[callable, list]:
