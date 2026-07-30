@@ -52,7 +52,9 @@ async def handle_message(event, context=None) -> dict:
 
         # flush to public bucket BEFORE sending the Telegram reply
         flush_log(log_buffer)
-        session["messages"].append({"role": "assistant", "text": str(answer_payload)})
+        session["messages"].append(
+            {"role": "git assistant", "text": str(answer_payload)}
+        )
         answer_payload["log_url"] = LOG_URL
         return answer_payload  # e.g. {"answer": ..., "log_url": "..."}
     else:

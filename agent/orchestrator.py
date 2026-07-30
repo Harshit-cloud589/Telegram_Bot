@@ -12,10 +12,28 @@ from logger import LOG_URL
 client = Groq(api_key=os.getenv("GROQ_API_KEY"))
 MODEL_NAME = "llama-3.1-8b-instant"
 import json
+import re
 import time
 
 from agent.tools_schema import TOOL_FUNCTIONS, TOOL_SCHEMAS
 from agent.tools_web import with_timeout
+
+
+def try_parse_pseudo_function_call(text: str):
+    """Detect Groq's malformed <function=name>{...}</function> or <function(name)>{...}</function>
+    pattern and extract name + args if present."""
+    m = re.search(
+        r"<function[=\(]([a-zA-Z_]+)[\)\]]?\s*(\{.*?\})\s*</function>", text, re.DOTALL
+    )
+    if m:
+        name = m.group(1)
+        try:
+            args = json.loads(m.group(2))
+            return name, args
+        except Exception:
+            return None
+    return None
+
 
 SYSTEM_PROMPT = """You are a data-analysis agent. You receive a data-analysis question via Telegram.
 
@@ -102,7 +120,33 @@ async def run_agent_and_format(
         tool_calls = getattr(msg, "tool_calls", None)
 
         if not tool_calls:
-            final_text = (msg.content or "").strip()
+            content = (msg.content or "").strip()
+            pseudo = try_parse_pseudo_function_call(content)
+            if pseudo:
+                fn_name, fn_args = pseudo
+                if log_fn:
+                    log_fn(
+                        {
+                            "event": "pseudo_function_call_recovered",
+                            "tool": fn_name,
+                            "args": fn_args,
+                        }
+                    )
+                fn = TOOL_FUNCTIONS.get(fn_name)
+                result = (
+                    with_timeout(fn, 20, **fn_args)
+                    if fn
+                    else f"ERROR: unknown tool {fn_name}"
+                )
+                chat_messages.append({"role": "assistant", "content": content})
+                chat_messages.append(
+                    {
+                        "role": "user",
+                        "content": f"Tool result: {result}\n\nNow provide your final answer as valid JSON only.",
+                    }
+                )
+                continue  # loop again instead of treating this as final
+            final_text = content
             break
 
         # model wants to call one or more tools — append its request, then run each
