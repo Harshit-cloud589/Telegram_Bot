@@ -46,15 +46,18 @@ def web_search_tool(query: str) -> str:
 
 
 def web_fetch(url: str) -> str:
-    """Fetch the raw text/HTML content of a URL. Use for MOSPI pages, data.gov.in, etc.
+    """Fetch and extract the main readable text content of a URL (HTML stripped)."""
+    import requests
+    from bs4 import BeautifulSoup
 
-    Args:
-        url: The full URL to fetch.
-    """
     try:
         resp = requests.get(url, timeout=20, headers={"User-Agent": "Mozilla/5.0"})
         resp.raise_for_status()
-        return resp.text[:15000]  # cap size to avoid blowing context
+        soup = BeautifulSoup(resp.text, "html.parser")
+        for tag in soup(["script", "style", "nav", "footer", "header"]):
+            tag.decompose()
+        text = soup.get_text(separator=" ", strip=True)
+        return text[:8000]  # cap size
     except Exception as e:
         return f"ERROR fetching {url}: {e}"
 

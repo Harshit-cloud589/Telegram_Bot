@@ -82,6 +82,9 @@ When a question references MOSPI (Ministry of Statistics and Programme Implement
 When computing standard deviation or variance, use SAMPLE statistics (dividing by N-1,
 i.e. Python's statistics.stdev / statistics.variance or pandas' default .std()/.var()),
 unless the question explicitly asks for population statistics.
+ALWAYS use run_python for ANY computation, including simple ones like finding a maximum,
+minimum, index/position, count, or sum — even if it looks trivial enough to do mentally.
+Do not compute or count anything by reasoning alone.
 NEVER FABRICATE: Never invent, guess, or hardcode a plausible-looking answer when you don't
 have real data. If a tool fails or returns nothing useful, try a different tool or query — do
 not write code that just prints a guessed literal value instead of using real fetched data.
