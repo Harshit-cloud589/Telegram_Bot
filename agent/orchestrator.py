@@ -349,7 +349,7 @@ async def run_agent_and_format(
         print("tool_calls =", getattr(msg, "tool_calls", None), flush=True)
         print("content =", repr(msg.content), flush=True)
         print("==========================================\n", flush=True)
-                tool_calls = getattr(msg, "tool_calls", None)
+        tool_calls = getattr(msg, "tool_calls", None)
 
         if not tool_calls:
             content = (msg.content or "").strip()
