@@ -10,7 +10,7 @@ from logger import LOG_URL
 
 # client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
 client = Groq(api_key=os.getenv("GROQ_API_KEY"))
-MODEL_NAME = "llama-3.1-8b-instant"
+MODEL_NAME = "llama-3.3-70b-versatile"
 import json
 import re
 import time
@@ -92,11 +92,15 @@ file (or asks you to download/analyze a dataset), follow this exact two-step pro
 2. Then call run_python with code that starts with:
    df = get_cached_dataset("<the same url>")
    ...and perform the actual analysis/computation on df using pandas.
-CRITICAL TOOL USAGE: run_python is ONLY for computing on data you already have (e.g. from
-a previous tool result, or data given directly in the question). It does NOT have access to
-requests, BeautifulSoup, or the internet in a reliable way — NEVER write code inside
-run_python that tries to fetch URLs or scrape HTML (no requests.get, no BeautifulSoup,
-no "from web_fetch import ...").
+Use run_python ONLY when arithmetic, statistics, aggregation,
+filtering, sorting, dataframe operations, or other actual computation
+is required.
+
+Do NOT use run_python merely to extract a value that already appears
+verbatim in the fetched webpage, PDF, table, or dataset.
+
+If the answer is explicitly present in tool output,
+return it directly.
 
 Instead, use these separate tools for finding and reading web data:
 - web_search_tool(query) — to find relevant pages
@@ -104,12 +108,13 @@ Instead, use these separate tools for finding and reading web data:
 - fetch_dataset(url) — to download a CSV/Excel file for analysis
 - fetch_pdf_tables(url) — to extract tables from a PDF
 
-Workflow for a MOSPI/web-based question:
-1. web_search_tool or web_fetch to find the right page/link
-2. web_fetch or fetch_pdf_tables/fetch_dataset to get the actual data as clean text/tables
-3. ONLY THEN use run_python to compute/extract a specific value from that already-fetched
-   text/table data — pass the fetched content into your code as a string literal or use
-   get_cached_dataset() for datasets loaded via fetch_dataset.
+Workflow for MOSPI questions
+
+1. Find the official page.
+2. Fetch the page/PDF/Excel.
+3. If the requested value appears directly in the fetched content,
+   answer immediately.
+4. Use run_python ONLY if calculation is required from multiple values.
 Never try to answer a dataset question from the preview text alone — always load the real
 DataFrame via get_cached_dataset and compute the exact answer with pandas/numpy.
 If a given URL is a webpage (not a direct file), first use web_fetch to find the actual
@@ -125,6 +130,26 @@ have real data. If a tool fails or returns nothing useful, try a different tool 
 not write code that just prints a guessed literal value instead of using real fetched data.
 If you truly cannot find the answer after genuine attempts, respond with {"answer": null}
 rather than inventing a number or name.
+
+DO NOT call run_python when:
+
+- extracting a value from a webpage
+- reading a PDF
+- reading a table
+- reading an HTML page
+- reading a JSON response
+- identifying a link
+- extracting a sentence
+
+Only call run_python if you need to:
+
+- calculate
+- aggregate
+- filter
+- group
+- sort
+- compute statistics
+- manipulate a dataframe
 """
 
 

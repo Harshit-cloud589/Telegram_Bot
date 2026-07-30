@@ -15,7 +15,7 @@ TOOL_SCHEMAS = [
         "type": "function",
         "function": {
             "name": "web_fetch",
-            "description": "Fetch the raw text/HTML content of a URL. Use for MOSPI pages, data.gov.in, etc.",
+            "description": "Fetch webpage text.If the requested answer is explicitly present in the page, return it directly without using run_python.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -49,7 +49,8 @@ TOOL_SCHEMAS = [
         "function": {
             "name": "run_python",
             "description": (
-                "Execute a Python snippet for data computation. IMPORTANT: the 'code' argument "
+                "Execute Python ONLY for mathematical or dataframe computations"
+                "Never use this tool to read webpages, extract values from text or scrape HTML"
                 "must be a valid JSON string — use \\n for newlines, do not include raw line breaks. "
                 "Keep code compact; prefer semicolons or a single expression where possible. "
                 "Always end with a print() statement for the result — only stdout is captured."
