@@ -8,3 +8,5 @@ requests
 pdfplumber
 groq
 bs4
+xlrd
+lxml
