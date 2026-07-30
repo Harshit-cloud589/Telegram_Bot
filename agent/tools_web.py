@@ -76,29 +76,27 @@ def fetch_table_from_url(url: str, table_index: int = 0) -> str:
         return f"ERROR parsing table from {url}: {e}"
 
 
-def run_python(code: str) -> str:
-    """Execute a Python snippet for data computation (pandas/numpy/statistics available).
-    Print the final result — only stdout is returned. Use this for ALL numeric/formula
-    computations; never compute numbers manually.
+def get_cached_dataset(url: str):
+    """Helper exposed inside run_python's exec globals."""
+    return _dataset_cache.get(url)
 
-    Args:
-        code: Python source code to execute.
+
+def run_python(code: str) -> str:
+    """Execute a Python snippet. pandas/numpy/statistics available. If a dataset was
+    previously fetched via fetch_dataset, load it with get_cached_dataset(url).
+    Print the final result — only stdout is captured.
     """
     import contextlib
+    import io as _io
 
     allowed_globals = {
-        "pd": pd,
-        "pandas": pd,
-        "io": io,
+        "pd": __import__("pandas"),
+        "np": __import__("numpy"),
+        "statistics": __import__("statistics"),
+        "get_cached_dataset": get_cached_dataset,
         "__builtins__": __builtins__,
     }
-    try:
-        allowed_globals["np"] = np
-        allowed_globals["statistics"] = statistics
-    except ImportError:
-        pass
-
-    buf = io.StringIO()
+    buf = _io.StringIO()
     try:
         with contextlib.redirect_stdout(buf):
             exec(code, allowed_globals)
@@ -162,3 +160,56 @@ def datagovin_search(query: str) -> str:
         timeout=15,
     )
     return resp.text[:5000]
+
+
+def fetch_dataset(url: str) -> str:
+    """Download a CSV, Excel, JSON, or TSV file from a URL and return a preview
+    (column names, dtypes, first 10 rows) so you can plan how to analyze it.
+    Use this whenever a question links to a downloadable dataset file.
+
+    Args:
+        url: Direct URL to a CSV/XLSX/XLS/TSV/JSON data file.
+    """
+    import io
+
+    import pandas as pd
+    import requests
+
+    try:
+        resp = requests.get(url, timeout=30, headers={"User-Agent": "Mozilla/5.0"})
+        resp.raise_for_status()
+        content = resp.content
+
+        # try to guess format from URL / content-type
+        url_lower = url.lower()
+        if url_lower.endswith((".xlsx", ".xls")):
+            df = pd.read_excel(io.BytesIO(content))
+        elif url_lower.endswith(".json"):
+            df = pd.read_json(io.BytesIO(content))
+        elif url_lower.endswith(".tsv"):
+            df = pd.read_csv(io.BytesIO(content), sep="\t")
+        else:
+            # default: try CSV, fall back to sniffing
+            try:
+                df = pd.read_csv(io.BytesIO(content))
+            except Exception:
+                df = pd.read_csv(io.BytesIO(content), sep=None, engine="python")
+
+        # cache it globally so run_python can access it without re-downloading
+        _dataset_cache[url] = df
+
+        preview = (
+            f"Loaded dataset from {url}\n"
+            f"Shape: {df.shape[0]} rows x {df.shape[1]} columns\n"
+            f"Columns: {list(df.columns)}\n"
+            f"Dtypes:\n{df.dtypes.to_string()}\n"
+            f"First 10 rows:\n{df.head(10).to_string()}\n\n"
+            f"To analyze this data, use run_python with: "
+            f"df = get_cached_dataset({url!r}) — then compute what's needed."
+        )
+        return preview[:6000]
+    except Exception as e:
+        return f"ERROR fetching dataset {url}: {e}"
+
+
+_dataset_cache: dict[str, "pd.DataFrame"] = {}

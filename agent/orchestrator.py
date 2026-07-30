@@ -85,6 +85,18 @@ unless the question explicitly asks for population statistics.
 ALWAYS use run_python for ANY computation, including simple ones like finding a maximum,
 minimum, index/position, count, or sum — even if it looks trivial enough to do mentally.
 Do not compute or count anything by reasoning alone.
+LINKED DATASET QUESTIONS: If a question provides a URL to a CSV, Excel, JSON, or other data
+file (or asks you to download/analyze a dataset), follow this exact two-step process:
+1. Call fetch_dataset(url) first — this downloads the file and shows you its columns,
+   types, and a preview of the data.
+2. Then call run_python with code that starts with:
+   df = get_cached_dataset("<the same url>")
+   ...and perform the actual analysis/computation on df using pandas.
+Never try to answer a dataset question from the preview text alone — always load the real
+DataFrame via get_cached_dataset and compute the exact answer with pandas/numpy.
+If a given URL is a webpage (not a direct file), first use web_fetch to find the actual
+download link (look for .csv, .xlsx, .xls, .json hrefs in the page), then call
+fetch_dataset on that direct file URL.
 NEVER FABRICATE: Never invent, guess, or hardcode a plausible-looking answer when you don't
 have real data. If a tool fails or returns nothing useful, try a different tool or query — do
 not write code that just prints a guessed literal value instead of using real fetched data.

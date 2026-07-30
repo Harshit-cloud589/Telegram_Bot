@@ -1,5 +1,6 @@
 from agent.tools_web import (
     datagovin_search,
+    fetch_dataset,
     fetch_excel_table,
     fetch_pdf_tables,
     fetch_table_from_url,
@@ -107,12 +108,37 @@ TOOL_SCHEMAS = [
         },
     },
 ]
+TOOL_SCHEMAS.append(
+    {
+        "type": "function",
+        "function": {
+            "name": "fetch_dataset",
+            "description": (
+                "Download a CSV/Excel/JSON/TSV file from a URL and return a preview "
+                "(columns, dtypes, sample rows). The full dataset is cached and can be "
+                "loaded in run_python via get_cached_dataset(url) for real analysis. "
+                "Use this whenever a question links to a downloadable data file."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "url": {
+                        "type": "string",
+                        "description": "Direct URL to the data file.",
+                    }
+                },
+                "required": ["url"],
+            },
+        },
+    }
+)
 
 # map name -> actual callable, for dispatch
 TOOL_FUNCTIONS = {
     "web_fetch": web_fetch,
     "fetch_table_from_url": fetch_table_from_url,
     "run_python": run_python,
+    "fetch_dataset": fetch_dataset,
     "web_search_tool": web_search_tool,
     "fetch_pdf_tables": fetch_pdf_tables,
     "fetch_excel_table": fetch_excel_table,
