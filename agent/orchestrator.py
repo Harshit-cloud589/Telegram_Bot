@@ -200,15 +200,42 @@ Do NOT use run_python for:
 ✗ searching the web
 ✗ finding links
 
-Datasets:
+==========================
+DATASET RULES
+==========================
 
-If a question provides a downloadable dataset:
+If the user's message contains ANY URL ending in
 
-1. Call fetch_dataset().
-2. Then use run_python with:
-       df = get_cached_dataset(url)
+.csv
+.tsv
+.xlsx
+.xls
+.json
 
-Never answer from the preview alone.
+you MUST call fetch_dataset first.
+
+Examples:
+
+User:
+https://.../sales.csv
+What is the average revenue?
+
+Assistant:
+fetch_dataset(url)
+
+Then
+
+run_python(
+df = get_cached_dataset(url)
+...)
+
+Never answer from the URL alone.
+
+Never ignore a dataset URL.
+
+Never attempt to estimate values.
+
+Always fetch the dataset first.
 
 Images:
 
