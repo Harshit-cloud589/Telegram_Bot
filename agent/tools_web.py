@@ -2,12 +2,14 @@ import concurrent.futures
 import io
 import os
 import statistics
+from xmlrpc import client
 
 import numpy as np
 import pandas as pd
 import pdfplumber
 import requests
 from dotenv import load_dotenv
+from groq import Groq
 
 load_dotenv()
 
@@ -213,3 +215,49 @@ def fetch_dataset(url: str) -> str:
 
 
 _dataset_cache: dict[str, "pd.DataFrame"] = {}
+
+
+def analyze_image(image_url: str, question: str) -> str:
+    """Fetch an image (chart, graph, table, screenshot) from a URL and analyze it
+    using a vision-capable model to extract data or answer a question about it.
+
+    Args:
+        image_url: Direct URL to an image (PNG, JPG, etc.) containing a chart, graph, or table.
+        question: What specifically to extract or answer from the image.
+    """
+    import base64
+
+    import requests
+
+    try:
+        resp = requests.get(
+            image_url, timeout=20, headers={"User-Agent": "Mozilla/5.0"}
+        )
+        resp.raise_for_status()
+        image_b64 = base64.b64encode(resp.content).decode("utf-8")
+
+        content_type = resp.headers.get("Content-Type", "image/png")
+        client = Groq(api_key=os.getenv("GROQ_API_KEY"))
+        vision_response = client.chat.completions.create(
+            model="qwen/qwen3.6-27b",  # confirm exact current model name
+            messages=[
+                {
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "text",
+                            "text": f"Analyze this image and answer: {question}. If it's a chart/graph, extract exact numeric values where possible. If it's a table, transcribe the relevant data precisely.",
+                        },
+                        {
+                            "type": "image_url",
+                            "image_url": {
+                                "url": f"data:{content_type};base64,{image_b64}"
+                            },
+                        },
+                    ],
+                }
+            ],
+        )
+        return vision_response.choices[0].message.content
+    except Exception as e:
+        return f"ERROR analyzing image {image_url}: {e}"
