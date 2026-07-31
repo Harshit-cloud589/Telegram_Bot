@@ -617,12 +617,8 @@ async def run_agent_and_format(
         ##############################################################
 
         if not tool_calls:
-            print("BREAKING because no tool calls")
-            print("CONTENT =", repr(msg.content))
             content = (msg.content or "").strip()
-            if not content and state.executed_tools:
-                print("Empty response after tool call, continuing...")
-                continue
+
             pseudo = try_parse_pseudo_function_call(content)
 
             if pseudo:
@@ -663,6 +659,11 @@ async def run_agent_and_format(
                 )
 
                 continue
+            if not content:
+                if state.iteration == 1:
+                    continue
+                state.final_answer = "null"
+                break
 
             state.final_answer = content
 
