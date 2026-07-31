@@ -418,9 +418,28 @@ def fetch_dataset(url: str, **kwargs) -> str:
             f"Columns: {list(df.columns)}\n"
             f"Dtypes:\n{df.dtypes.to_string()}\n"
             f"First 10 rows:\n{df.head(10).to_string()}\n\n"
-            f"To analyze this data, use run_python with: "
-            f"df = get_cached_dataset({url!r}) — then compute what's needed."
         )
+        preview += f"""
+
+        ==================================================
+        SYSTEM INSTRUCTION
+
+        The dataset has already been downloaded.
+
+        DO NOT call fetch_dataset again.
+
+        Your NEXT tool call MUST be run_python.
+
+        Inside run_python start with:
+
+        df = get_cached_dataset({url!r})
+
+        Then compute the user's requested answer.
+
+        Do not answer until run_python has been executed.
+        ==================================================
+        """
+
         return preview[:6000]
     except Exception as e:
         return f"ERROR fetching dataset {url}: {e}"

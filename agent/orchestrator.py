@@ -55,7 +55,7 @@ TOOL_TIMEOUTS = {
     "analyze_image": 20,
     "run_python": 20,
 }
-DEFAULT_TOOL_TIMEOUT = 20
+DEFAULT_TOOL_TIMEOUT = 60
 
 
 def resolve_fetch_tool(requested_name: str, args: dict) -> str:
@@ -522,9 +522,27 @@ async def run_agent_and_format(
         state.iteration += 1
 
         if time.monotonic() >= deadline:
-            state.final_answer = "null"
-            break
+            print("[TIMEOUT] Asking for final answer...")
 
+            final_messages = list(state.chat_messages)
+
+            final_messages.append(
+                {
+                    "role": "system",
+                    "content": "You have no time left.\n"
+                    "Do NOT call any more tools.\n"
+                    "Using ONLY the information already collected, answer the user's original question.\n"
+                    "If the answer cannot be determined, return null.",
+                }
+            )
+
+            try:
+                msg = ask_llm_without_tools(final_messages)
+                state.final_answer = (msg.content or "").strip()
+            except Exception:
+                state.final_answer = "null"
+
+            break
         trim_history(state)
 
         try:
