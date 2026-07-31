@@ -81,6 +81,28 @@ def detect_dataset_urls(text: str) -> list[str]:
     return seen
 
 
+# ---------------------------------------------------------------------------
+# "null"-ish answer detection — GPT-OSS sometimes returns the literal text
+# "null" (or a quoted/punctuated variant of it) as its final content instead
+# of calling a needed tool (e.g. run_python right after a dataset was
+# prefetched). This must be treated the same as an empty response, NOT
+# accepted immediately, when we actually have evidence to work with.
+# ---------------------------------------------------------------------------
+def is_null_like_answer(text: str) -> bool:
+    if not isinstance(text, str):
+        return False
+    stripped = text.strip().strip("\"'` ").strip(".,;:!").strip()
+    return stripped.lower() in (
+        "null",
+        "none",
+        "n/a",
+        "na",
+        "unknown",
+        "{}",
+        '{"answer": null}',
+    )
+
+
 def resolve_fetch_tool(requested_name: str, args: dict) -> str:
     """If the requested tool is a fetch-family tool and the resource type is
     deterministically inferable from the URL, override the LLM's choice
@@ -397,6 +419,11 @@ class AgentState:
     # assistant response, so we don't retry forever.
     empty_retry_used: bool = False
 
+    # Set once we've already retried the LLM one time after it returned a
+    # literal "null"-ish answer while evidence was available, instead of
+    # actually using that evidence / calling the needed tool.
+    null_retry_used: bool = False
+
 
 def add_tool_message(state, tc, result):
 
@@ -439,9 +466,10 @@ def should_stop(state):
 
 def _final_synthesis_or_null(state: "AgentState") -> str:
     """Last-resort recovery path. When the agent hits a dead end (repeated
-    empty assistant responses, an unrecoverable API error, etc.) but has
-    already gathered some evidence, give the model one final no-tools pass
-    over that evidence instead of immediately giving up with "null"."""
+    empty/null-ish assistant responses, an unrecoverable API error, etc.)
+    but has already gathered some evidence, give the model one final
+    no-tools pass over that evidence instead of immediately giving up with
+    "null"."""
     if not state.evidence:
         return "null"
 
@@ -455,7 +483,11 @@ def _final_synthesis_or_null(state: "AgentState") -> str:
                 "content": (
                     "You are NOT allowed to call tools anymore.\n"
                     "Using ONLY the evidence already collected below, answer "
-                    "the user's original question.\n\n"
+                    "the user's original question.\n"
+                    "If the evidence contains a dataset that was fetched but "
+                    "never actually analyzed, compute the answer yourself "
+                    "from the evidence shown (e.g. row counts, columns, "
+                    "sample rows) as best you can instead of giving up.\n\n"
                     f"Evidence:\n\n{evidence}\n\n"
                     "If the answer truly cannot be determined from this "
                     "evidence, reply with null."
@@ -465,6 +497,8 @@ def _final_synthesis_or_null(state: "AgentState") -> str:
 
         msg = ask_llm_without_tools(final_messages)
         content = (msg.content or "").strip()
+        if content and not is_null_like_answer(content):
+            return content
         return content if content else "null"
     except Exception:
         return "null"
@@ -584,8 +618,11 @@ def prefetch_dataset_urls(state: "AgentState", user_text: str, log_fn=None) -> N
                     "automatically before you started reasoning.\n"
                     f"Result:\n{text}\n\n"
                     "Do NOT call fetch_dataset on this URL again.\n"
-                    "Use run_python with get_cached_dataset(url) to analyze "
-                    "it if computation is needed."
+                    "You MUST now call run_python with "
+                    "get_cached_dataset(url) to actually compute the "
+                    "answer. Do not answer with null or any other value "
+                    "until you have done this — a dataset being cached is "
+                    "not the same as the answer being known."
                 ),
             }
         )
@@ -654,9 +691,10 @@ async def run_agent_and_format(
             try:
                 msg = ask_llm_without_tools(final_messages)
                 content = (msg.content or "").strip()
-                state.final_answer = (
-                    content if content else _final_synthesis_or_null(state)
-                )
+                if content and not is_null_like_answer(content):
+                    state.final_answer = content
+                else:
+                    state.final_answer = _final_synthesis_or_null(state)
             except Exception:
                 state.final_answer = _final_synthesis_or_null(state)
 
@@ -741,6 +779,7 @@ async def run_agent_and_format(
 
             if pseudo:
                 state.empty_retry_used = False
+                state.null_retry_used = False
 
                 fn_name, fn_args = pseudo
 
@@ -802,7 +841,48 @@ async def run_agent_and_format(
                 state.final_answer = _final_synthesis_or_null(state)
                 break
 
+            # -----------------------------------------------------------
+            # Model returned real, non-empty content — but it may still be
+            # a literal "null"-ish string returned prematurely (e.g. right
+            # after a dataset was prefetched, instead of calling
+            # run_python). Don't accept that at face value if we have
+            # evidence sitting unused.
+            # -----------------------------------------------------------
+            if is_null_like_answer(content) and state.evidence:
+                if not state.null_retry_used:
+                    state.null_retry_used = True
+                    print(
+                        "[INFO] Model returned a null-ish answer despite "
+                        "having evidence — nudging it to use the "
+                        "evidence/tools and retrying once."
+                    )
+                    state.chat_messages.append(
+                        {
+                            "role": "system",
+                            "content": (
+                                "You answered null, but there is evidence "
+                                "already collected (including any fetched "
+                                "datasets) that has not been used yet.\n"
+                                "If a dataset was fetched, you MUST call "
+                                "run_python with get_cached_dataset(url) to "
+                                "compute the answer before concluding it is "
+                                "null.\n"
+                                "Only answer null if the evidence truly "
+                                "cannot answer the question."
+                            ),
+                        }
+                    )
+                    continue
+
+                print(
+                    "[INFO] Model returned a null-ish answer again after "
+                    "retry — attempting final synthesis from evidence."
+                )
+                state.final_answer = _final_synthesis_or_null(state)
+                break
+
             state.empty_retry_used = False
+            state.null_retry_used = False
             state.final_answer = content
 
             break
@@ -812,6 +892,7 @@ async def run_agent_and_format(
         ##############################################################
 
         state.empty_retry_used = False
+        state.null_retry_used = False
 
         state.chat_messages.append(
             {
@@ -865,7 +946,10 @@ async def run_agent_and_format(
             final_msg = ask_llm_without_tools(final_messages)
 
             content = (final_msg.content or "").strip()
-            state.final_answer = content if content else _final_synthesis_or_null(state)
+            if content and not is_null_like_answer(content):
+                state.final_answer = content
+            else:
+                state.final_answer = _final_synthesis_or_null(state)
 
             break
         # -------------------------------------------------------
@@ -931,7 +1015,7 @@ async def run_agent_and_format(
 
     answer = state.final_answer
 
-    if not answer:
+    if not answer or is_null_like_answer(answer):
         answer = _final_synthesis_or_null(state)
 
     if not answer:
