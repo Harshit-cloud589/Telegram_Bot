@@ -550,10 +550,7 @@ def execute_tool_call(tc, state, log_fn=None):
             {
                 "role": "system",
                 "content": (
-                    "The dataset has been loaded.\n"
-                    "Your next action MUST be run_python.\n"
-                    "Do not answer yet.\n"
-                    "Do not call fetch_dataset again."
+                    "The dataset is available. Your next tool call must be run_python."
                 ),
             }
         )
@@ -702,7 +699,11 @@ async def run_agent_and_format(
         trim_history(state)
 
         try:
+            print("CALLING LLM", state.iteration)
+
             msg = ask_llm(state.chat_messages)
+
+            print("LLM RETURNED", state.iteration)
             if state.iteration >= 6:
                 state.chat_messages.append(
                     {

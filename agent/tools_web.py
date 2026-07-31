@@ -418,25 +418,6 @@ def fetch_dataset(url: str) -> str:
 
     {preview}
 
-    ==================================================
-    SYSTEM INSTRUCTION
-
-    The dataset has already been downloaded.
-
-    DO NOT call fetch_dataset again.
-
-    Your NEXT tool call MUST be run_python.
-
-    Inside run_python begin with:
-
-    df = get_cached_dataset({url!r})
-
-    Then compute ONLY what the user requested.
-
-    Print ONLY the final value(s) needed for the answer.
-    Do not print intermediate tables.
-    Do not explain your reasoning.
-    ==================================================
     """
 
     return info
