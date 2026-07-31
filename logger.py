@@ -72,16 +72,10 @@ def append_log_lines(entries: list[dict]):
             )
 
 
-def make_logger(chat_id: int, qid: str = None) -> tuple[callable, list]:
-    """Returns (log_fn, buffer) — log_fn appends to buffer in-memory during the run;
-    call flush_log(buffer) once the run completes."""
+def make_logger():
     buffer = []
 
     def log_fn(entry: dict):
-        entry["ts"] = time.time()
-        entry["chat_id"] = chat_id
-        if qid:
-            entry["qid"] = qid
         buffer.append(entry)
         print("[LOG]", entry)
 

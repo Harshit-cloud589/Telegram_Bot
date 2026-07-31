@@ -519,7 +519,6 @@ async def run_agent_and_format(
             f"answer={state.final_answer!r} "
             f"tools={len(state.executed_tools)}"
         )
-        state.iteration += 1
 
         if time.monotonic() >= deadline:
             print("[TIMEOUT] Asking for final answer...")
@@ -546,7 +545,9 @@ async def run_agent_and_format(
         trim_history(state)
 
         try:
+            print("before ask_llm")
             msg = ask_llm(state.chat_messages)
+            print("after ask_llm")
             if state.iteration >= 6:
                 state.chat_messages.append(
                     {
@@ -758,6 +759,7 @@ async def run_agent_and_format(
                     "Do not call another tool.",
                 }
             )
+        state.iteration += 1
     print(
         "should_stop:",
         should_stop(state),
