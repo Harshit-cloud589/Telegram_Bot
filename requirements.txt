@@ -10,3 +10,5 @@ groq
 bs4
 xlrd
 lxml
+html5lib
+camelot-py
