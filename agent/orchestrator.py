@@ -491,15 +491,21 @@ def execute_tool_call(tc, state, log_fn=None):
 
 
 def ask_llm(chat_messages):
+    print("ENTER ask_llm", flush=True)
 
-    response = client.chat.completions.create(
-        model=MODEL_NAME,
-        messages=chat_messages,
-        tools=TOOL_SCHEMAS,
-        temperature=0,
-    )
+    try:
+        response = client.chat.completions.create(
+            model=MODEL_NAME,
+            messages=chat_messages,
+            tools=TOOL_SCHEMAS,
+            temperature=0,
+        )
+        print("CREATE RETURNED", flush=True)
+        return response.choices[0].message
 
-    return response.choices[0].message
+    except BaseException as e:
+        print("CREATE FAILED:", type(e).__name__, repr(e), flush=True)
+        raise
 
 
 async def run_agent_and_format(
