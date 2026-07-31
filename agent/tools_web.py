@@ -282,7 +282,7 @@ def fetch_table_from_url(url: str, table_index: int = 0, **kwargs) -> str:
 
 def get_cached_dataset(url: str):
     """Helper exposed inside run_python's exec globals."""
-    return _dataset_cache.get(url)
+    return DATASET_CACHE.get(url)
 
 
 def run_python(code: str, **kwargs) -> str:
