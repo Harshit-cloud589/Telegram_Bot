@@ -57,6 +57,29 @@ TOOL_TIMEOUTS = {
 }
 DEFAULT_TOOL_TIMEOUT = 60
 
+# ---------------------------------------------------------------------------
+# Dataset URL detection — run BEFORE the reasoning loop so we never depend on
+# the model deciding to call fetch_dataset on its own.
+# ---------------------------------------------------------------------------
+DATASET_URL_RE = re.compile(
+    r"https?://\S+?\.(?:csv|tsv|xlsx|xls|json)(?:\?\S*)?(?=[\s\)\]\}\"'<>]|$)",
+    re.IGNORECASE,
+)
+
+
+def detect_dataset_urls(text: str) -> list[str]:
+    """Return every dataset-looking URL (csv/tsv/xlsx/xls/json) found in the
+    given text, in order of first appearance, de-duplicated."""
+    if not isinstance(text, str) or not text:
+        return []
+
+    seen = []
+    for match in DATASET_URL_RE.findall(text):
+        cleaned = match.strip().rstrip(".,;:")
+        if cleaned and cleaned not in seen:
+            seen.append(cleaned)
+    return seen
+
 
 def resolve_fetch_tool(requested_name: str, args: dict) -> str:
     """If the requested tool is a fetch-family tool and the resource type is
@@ -297,7 +320,7 @@ def _run_resolved_tool(
     return fn_name, result
 
 
-def should_force_answer(state: AgentState) -> bool:
+def should_force_answer(state: "AgentState") -> bool:
     """
     Decide whether the agent has started looping.
     """
@@ -370,6 +393,10 @@ class AgentState:
 
     iteration: int = 0
 
+    # Set once we've already retried the LLM one time after an empty
+    # assistant response, so we don't retry forever.
+    empty_retry_used: bool = False
+
 
 def add_tool_message(state, tc, result):
 
@@ -408,6 +435,39 @@ def should_stop(state):
         return True
 
     return False
+
+
+def _final_synthesis_or_null(state: "AgentState") -> str:
+    """Last-resort recovery path. When the agent hits a dead end (repeated
+    empty assistant responses, an unrecoverable API error, etc.) but has
+    already gathered some evidence, give the model one final no-tools pass
+    over that evidence instead of immediately giving up with "null"."""
+    if not state.evidence:
+        return "null"
+
+    try:
+        evidence = "\n\n".join(state.evidence[-6:])
+
+        final_messages = list(state.chat_messages)
+        final_messages.append(
+            {
+                "role": "system",
+                "content": (
+                    "You are NOT allowed to call tools anymore.\n"
+                    "Using ONLY the evidence already collected below, answer "
+                    "the user's original question.\n\n"
+                    f"Evidence:\n\n{evidence}\n\n"
+                    "If the answer truly cannot be determined from this "
+                    "evidence, reply with null."
+                ),
+            }
+        )
+
+        msg = ask_llm_without_tools(final_messages)
+        content = (msg.content or "").strip()
+        return content if content else "null"
+    except Exception:
+        return "null"
 
 
 # ============================================================
@@ -486,6 +546,52 @@ def execute_tool_call(tc, state, log_fn=None):
 
 
 # ============================================================
+# Deterministic dataset pre-fetch (runs before the reasoning loop)
+# ============================================================
+
+
+def prefetch_dataset_urls(state: "AgentState", user_text: str, log_fn=None) -> None:
+    """Scan the user's message for dataset URLs and fetch them immediately,
+    deterministically, instead of trusting the model to notice and call
+    fetch_dataset itself. Results are injected as evidence + a system note so
+    the model can move straight to run_python."""
+    urls = detect_dataset_urls(user_text)
+
+    for url in urls:
+        key = ("fetch_dataset", url)
+        if key in state.visited_urls:
+            continue
+
+        state.visited_urls.add(key)
+
+        used_name, result = _run_resolved_tool(
+            "fetch_dataset",
+            {"url": url},
+            log_fn,
+        )
+
+        text = compress_tool_result(result)
+        state.evidence.append(text)
+        state.executed_tools.append((used_name, {"url": url}))
+
+        print(f"[PREFETCH] fetch_dataset({url}) -> {text[:200]}")
+
+        state.chat_messages.append(
+            {
+                "role": "system",
+                "content": (
+                    f"The dataset at {url} has already been fetched "
+                    "automatically before you started reasoning.\n"
+                    f"Result:\n{text}\n\n"
+                    "Do NOT call fetch_dataset on this URL again.\n"
+                    "Use run_python with get_cached_dataset(url) to analyze "
+                    "it if computation is needed."
+                ),
+            }
+        )
+
+
+# ============================================================
 # LLM
 # ============================================================
 
@@ -513,6 +619,15 @@ async def run_agent_and_format(
 
     state = AgentState(chat_messages=build_chat_messages(messages))
 
+    # ------------------------------------------------------------------
+    # Deterministic dataset detection BEFORE entering the reasoning loop.
+    # ------------------------------------------------------------------
+    last_user_text = ""
+    if messages:
+        last_user_text = messages[-1].get("text", "") or ""
+
+    prefetch_dataset_urls(state, last_user_text, log_fn)
+
     while not should_stop(state):
         print(
             f"TOP OF LOOP | iter={state.iteration} "
@@ -538,9 +653,12 @@ async def run_agent_and_format(
 
             try:
                 msg = ask_llm_without_tools(final_messages)
-                state.final_answer = (msg.content or "").strip()
+                content = (msg.content or "").strip()
+                state.final_answer = (
+                    content if content else _final_synthesis_or_null(state)
+                )
             except Exception:
-                state.final_answer = "null"
+                state.final_answer = _final_synthesis_or_null(state)
 
             break
         trim_history(state)
@@ -558,7 +676,7 @@ async def run_agent_and_format(
                 )
 
         except RateLimitError:
-            state.final_answer = "null"
+            state.final_answer = _final_synthesis_or_null(state)
             break
 
         except APIStatusError as e:
@@ -570,7 +688,7 @@ async def run_agent_and_format(
             pseudo = try_extract_failed_generation(e)
 
             if pseudo is None:
-                state.final_answer = "null"
+                state.final_answer = _final_synthesis_or_null(state)
                 break
 
             fn_name, fn_args = pseudo
@@ -622,6 +740,8 @@ async def run_agent_and_format(
             pseudo = try_parse_pseudo_function_call(content)
 
             if pseudo:
+                state.empty_retry_used = False
+
                 fn_name, fn_args = pseudo
 
                 class FakeFunction:
@@ -659,12 +779,30 @@ async def run_agent_and_format(
                 )
 
                 continue
+
             if not content:
-                if state.iteration == 1:
+                # GPT-OSS sometimes returns a completely empty assistant
+                # message with no tool calls. Never treat that as "null"
+                # right away — retry the LLM call exactly once first.
+                if not state.empty_retry_used:
+                    state.empty_retry_used = True
+                    print(
+                        "[INFO] Empty assistant response with no tool "
+                        "calls — retrying LLM once."
+                    )
                     continue
-                state.final_answer = "null"
+
+                # Already retried once and still got nothing. If we've
+                # gathered any evidence along the way, give the model one
+                # last no-tools synthesis pass instead of giving up.
+                print(
+                    "[INFO] Empty assistant response persisted after "
+                    "retry — attempting final synthesis from evidence."
+                )
+                state.final_answer = _final_synthesis_or_null(state)
                 break
 
+            state.empty_retry_used = False
             state.final_answer = content
 
             break
@@ -672,6 +810,8 @@ async def run_agent_and_format(
         ##############################################################
         # TOOL CALLS
         ##############################################################
+
+        state.empty_retry_used = False
 
         state.chat_messages.append(
             {
@@ -724,7 +864,8 @@ async def run_agent_and_format(
 
             final_msg = ask_llm_without_tools(final_messages)
 
-            state.final_answer = (final_msg.content or "").strip()
+            content = (final_msg.content or "").strip()
+            state.final_answer = content if content else _final_synthesis_or_null(state)
 
             break
         # -------------------------------------------------------
@@ -789,6 +930,9 @@ async def run_agent_and_format(
     )
 
     answer = state.final_answer
+
+    if not answer:
+        answer = _final_synthesis_or_null(state)
 
     if not answer:
         answer = "null"
