@@ -584,48 +584,48 @@ def execute_tool_call(tc, state, log_fn=None):
 # ============================================================
 
 
-def prefetch_dataset_urls(state: "AgentState", user_text: str, log_fn=None) -> None:
-    """Scan the user's message for dataset URLs and fetch them immediately,
-    deterministically, instead of trusting the model to notice and call
-    fetch_dataset itself. Results are injected as evidence + a system note so
-    the model can move straight to run_python."""
-    urls = detect_dataset_urls(user_text)
+# def prefetch_dataset_urls(state: "AgentState", user_text: str, log_fn=None) -> None:
+#     """Scan the user's message for dataset URLs and fetch them immediately,
+#     deterministically, instead of trusting the model to notice and call
+#     fetch_dataset itself. Results are injected as evidence + a system note so
+#     the model can move straight to run_python."""
+#     urls = detect_dataset_urls(user_text)
 
-    for url in urls:
-        key = ("fetch_dataset", url)
-        if key in state.visited_urls:
-            continue
+#     for url in urls:
+#         key = ("fetch_dataset", url)
+#         if key in state.visited_urls:
+#             continue
 
-        state.visited_urls.add(key)
+#         state.visited_urls.add(key)
 
-        used_name, result = _run_resolved_tool(
-            "fetch_dataset",
-            {"url": url},
-            log_fn,
-        )
+#         used_name, result = _run_resolved_tool(
+#             "fetch_dataset",
+#             {"url": url},
+#             log_fn,
+#         )
 
-        text = compress_tool_result(result)
-        state.evidence.append(text)
-        state.executed_tools.append((used_name, {"url": url}))
+#         text = compress_tool_result(result)
+#         state.evidence.append(text)
+#         state.executed_tools.append((used_name, {"url": url}))
 
-        print(f"[PREFETCH] fetch_dataset({url}) -> {text[:200]}")
+#         print(f"[PREFETCH] fetch_dataset({url}) -> {text[:200]}")
 
-        state.chat_messages.append(
-            {
-                "role": "system",
-                "content": (
-                    f"The dataset at {url} has already been fetched "
-                    "automatically before you started reasoning.\n"
-                    f"Result:\n{text}\n\n"
-                    "Do NOT call fetch_dataset on this URL again.\n"
-                    "You MUST now call run_python with "
-                    "get_cached_dataset(url) to actually compute the "
-                    "answer. Do not answer with null or any other value "
-                    "until you have done this — a dataset being cached is "
-                    "not the same as the answer being known."
-                ),
-            }
-        )
+#         state.chat_messages.append(
+#             {
+#                 "role": "system",
+#                 "content": (
+#                     f"The dataset at {url} has already been fetched "
+#                     "automatically before you started reasoning.\n"
+#                     f"Result:\n{text}\n\n"
+#                     "Do NOT call fetch_dataset on this URL again.\n"
+#                     "You MUST now call run_python with "
+#                     "get_cached_dataset(url) to actually compute the "
+#                     "answer. Do not answer with null or any other value "
+#                     "until you have done this — a dataset being cached is "
+#                     "not the same as the answer being known."
+#                 ),
+#             }
+#         )
 
 
 # ============================================================
@@ -663,7 +663,7 @@ async def run_agent_and_format(
     if messages:
         last_user_text = messages[-1].get("text", "") or ""
 
-    prefetch_dataset_urls(state, last_user_text, log_fn)
+    # prefetch_dataset_urls(state, last_user_text, log_fn)
 
     while not should_stop(state):
         print(
