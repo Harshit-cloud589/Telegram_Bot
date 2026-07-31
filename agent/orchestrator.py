@@ -11,7 +11,7 @@ from logger import LOG_URL
 
 # client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
 client = Groq(api_key=os.getenv("GROQ_API_KEY"))
-MODEL_NAME = "llama-3.3-70b-versatile"
+MODEL_NAME = "openai/gpt-oss-120b"
 import inspect
 import json
 import re
@@ -491,21 +491,15 @@ def execute_tool_call(tc, state, log_fn=None):
 
 
 def ask_llm(chat_messages):
-    print("ENTER ask_llm", flush=True)
 
-    try:
-        response = client.chat.completions.create(
-            model=MODEL_NAME,
-            messages=chat_messages,
-            tools=TOOL_SCHEMAS,
-            temperature=0,
-        )
-        print("CREATE RETURNED", flush=True)
-        return response.choices[0].message
+    response = client.chat.completions.create(
+        model=MODEL_NAME,
+        messages=chat_messages,
+        tools=TOOL_SCHEMAS,
+        temperature=0,
+    )
 
-    except BaseException as e:
-        print("CREATE FAILED:", type(e).__name__, repr(e), flush=True)
-        raise
+    return response.choices[0].message
 
 
 async def run_agent_and_format(
@@ -525,6 +519,7 @@ async def run_agent_and_format(
             f"answer={state.final_answer!r} "
             f"tools={len(state.executed_tools)}"
         )
+        state.iteration += 1
 
         if time.monotonic() >= deadline:
             print("[TIMEOUT] Asking for final answer...")
@@ -551,9 +546,7 @@ async def run_agent_and_format(
         trim_history(state)
 
         try:
-            print("before ask_llm")
             msg = ask_llm(state.chat_messages)
-            print("after ask_llm")
             if state.iteration >= 6:
                 state.chat_messages.append(
                     {
@@ -614,9 +607,6 @@ async def run_agent_and_format(
             )
 
             continue
-        except Exception as e:
-            print("ASK_LLM FAILED:", type(e).__name__, repr(e))
-            raise
         print("=" * 80)
         print(msg.model_dump(mode="json"))
         print("=" * 80)
@@ -768,7 +758,6 @@ async def run_agent_and_format(
                     "Do not call another tool.",
                 }
             )
-        state.iteration += 1
     print(
         "should_stop:",
         should_stop(state),
