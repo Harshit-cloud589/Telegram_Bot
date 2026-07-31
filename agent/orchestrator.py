@@ -6,7 +6,7 @@ from typing import Any
 import google.genai as genai
 from agent.formatter import format_final_answer
 from google.genai import types
-from groq import APIStatusError, Groq, RateLimitError
+from groq import APIStatusError, BadRequestError, Groq, RateLimitError
 from logger import LOG_URL
 
 # client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
@@ -777,6 +777,21 @@ async def run_agent_and_format(
             )
 
             continue
+        except BadRequestError as e:
+            if "tool_use_failed" in str(e):
+                # Retry once with an extra system message
+                state.chat_messages.append(
+                    {
+                        "role": "system",
+                        "content": (
+                            "Your previous tool call was malformed. "
+                            "Tool arguments MUST be valid JSON matching the schema."
+                        ),
+                    }
+                )
+                msg = ask_llm(...)
+            else:
+                raise
         except Exception as e:
             print("ASK_LLM CRASHED")
             print(type(e))

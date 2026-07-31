@@ -119,10 +119,11 @@ TOOL_SCHEMAS = [
         "function": {
             "name": "run_python",
             "description": (
-                "Execute Python ONLY for dataframe analysis or mathematical computation. "
-                "Never use for webpages, HTML, PDFs, searching, or text extraction. "
-                "Use after fetch_dataset or after data has already been extracted. "
-                "Always finish with print(...)."
+                "Execute Python code.\n"
+                "IMPORTANT: Pass ONE JSON object with a single field named 'code'.\n"
+                "Example:\n"
+                '{"code":"print(1+1)"}\n'
+                "The value of 'code' must be a string containing valid Python."
             ),
             "parameters": {
                 "type": "object",
