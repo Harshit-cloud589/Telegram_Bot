@@ -763,6 +763,11 @@ async def run_agent_and_format(
             )
 
             continue
+        except Exception as e:
+            print("ASK_LLM CRASHED")
+            print(type(e))
+            print(e)
+            raise
         print("=" * 80)
         print(msg.model_dump(mode="json"))
         print("=" * 80)
