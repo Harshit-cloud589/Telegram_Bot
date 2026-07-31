@@ -376,76 +376,70 @@ def datagovin_search(query: str, **kwargs) -> str:
     return resp.text[:5000]
 
 
-def fetch_dataset(url: str, **kwargs) -> str:
-    """Download a CSV, Excel, JSON, or TSV file from a URL and return a preview
-    (column names, dtypes, first 10 rows) so you can plan how to analyze it.
-    Use this whenever a question links to a downloadable dataset file.
+DATASET_CACHE: dict[str, "pd.DataFrame"] = {}
 
-    Args:
-        url: Direct URL to a CSV/XLSX/XLS/TSV/JSON data file.
-    """
-    import io
 
+def fetch_dataset(url: str) -> str:
     import pandas as pd
-    import requests
 
-    try:
-        resp = requests.get(url, timeout=30, headers={"User-Agent": "Mozilla/5.0"})
-        resp.raise_for_status()
-        content = resp.content
+    global DATASET_CACHE
 
-        # try to guess format from URL / content-type
-        url_lower = url.lower()
-        if url_lower.endswith((".xlsx", ".xls")):
-            df = pd.read_excel(io.BytesIO(content))
-        elif url_lower.endswith(".json"):
-            df = pd.read_json(io.BytesIO(content))
-        elif url_lower.endswith(".tsv"):
-            df = pd.read_csv(io.BytesIO(content), sep="\t")
+    if url in DATASET_CACHE:
+        df = DATASET_CACHE[url]
+    else:
+        if url.endswith(".csv"):
+            df = pd.read_csv(url)
+        elif url.endswith((".xlsx", ".xls")):
+            df = pd.read_excel(url)
+        elif url.endswith(".json"):
+            df = pd.read_json(url)
         else:
-            # default: try CSV, fall back to sniffing
-            try:
-                df = pd.read_csv(io.BytesIO(content))
-            except Exception:
-                df = pd.read_csv(io.BytesIO(content), sep=None, engine="python")
+            raise ValueError(f"Unsupported dataset format: {url}")
 
-        # cache it globally so run_python can access it without re-downloading
-        _dataset_cache[url] = df
+        DATASET_CACHE[url] = df
 
-        preview = (
-            f"Loaded dataset from {url}\n"
-            f"Shape: {df.shape[0]} rows x {df.shape[1]} columns\n"
-            f"Columns: {list(df.columns)}\n"
-            f"Dtypes:\n{df.dtypes.to_string()}\n"
-            f"First 10 rows:\n{df.head(10).to_string()}\n\n"
-        )
-        preview += f"""
+    # -------- Small Preview --------
 
-        ==================================================
-        SYSTEM INSTRUCTION
+    preview = df.head(3).to_string(index=False)
 
-        The dataset has already been downloaded.
+    info = f"""
+    Loaded dataset successfully.
 
-        DO NOT call fetch_dataset again.
+    URL:
+    {url}
 
-        Your NEXT tool call MUST be run_python.
+    Rows: {len(df)}
+    Columns: {len(df.columns)}
 
-        Inside run_python start with:
+    Column names:
+    {", ".join(map(str, df.columns))}
 
-        df = get_cached_dataset({url!r})
+    Preview (first 3 rows):
 
-        Then compute the user's requested answer.
+    {preview}
 
-        Do not answer until run_python has been executed.
-        ==================================================
-        """
+    ==================================================
+    SYSTEM INSTRUCTION
 
-        return preview[:6000]
-    except Exception as e:
-        return f"ERROR fetching dataset {url}: {e}"
+    The dataset has already been downloaded.
 
+    DO NOT call fetch_dataset again.
 
-_dataset_cache: dict[str, "pd.DataFrame"] = {}
+    Your NEXT tool call MUST be run_python.
+
+    Inside run_python begin with:
+
+    df = get_cached_dataset({url!r})
+
+    Then compute ONLY what the user requested.
+
+    Print ONLY the final value(s) needed for the answer.
+    Do not print intermediate tables.
+    Do not explain your reasoning.
+    ==================================================
+    """
+
+    return info
 
 
 def analyze_image(image_url: str, question: str, **kwargs) -> str:

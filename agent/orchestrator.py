@@ -236,7 +236,7 @@ Never ignore a dataset URL.
 Never attempt to estimate values.
 
 Always fetch the dataset first.
-
+Print ONLY the final value(s) needed for the answer.
 Images:
 
 If a question is about a chart or graph,
