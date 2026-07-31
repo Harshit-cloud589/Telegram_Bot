@@ -101,10 +101,11 @@ TOOL_SCHEMAS = [
         "function": {
             "name": "fetch_dataset",
             "description": (
-                "Download a CSV, TSV, Excel or JSON dataset. "
-                "Cache the dataframe. "
-                "Always call this BEFORE run_python for downloadable datasets. "
-                "Never answer from the preview."
+                "MANDATORY for every downloadable dataset.\n"
+                "If the user message contains a URL ending in "
+                ".csv, .tsv, .xls, .xlsx or .json, "
+                "this MUST be the first tool called.\n"
+                "Never answer dataset questions without calling this tool first."
             ),
             "parameters": {
                 "type": "object",
