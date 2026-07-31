@@ -51,7 +51,7 @@ async def handle_message(event, context=None) -> dict:
             timeout_seconds=60,
             log_fn=log_fn,
         )
-        log_fn({"answer": answer_payload, "log_url": LOG_URL})
+        log_fn(answer_payload)
 
         # flush to public bucket BEFORE sending the Telegram reply
         flush_log(log_buffer)

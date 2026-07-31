@@ -608,6 +608,9 @@ async def run_agent_and_format(
             )
 
             continue
+        except Exception as e:
+            print("ASK_LLM FAILED:", type(e).__name__, repr(e))
+            raise
         print("=" * 80)
         print(msg.model_dump(mode="json"))
         print("=" * 80)
