@@ -45,7 +45,7 @@ async def handle_message(event, context=None) -> dict:
 
     if expects_json_reply(text):
         # Final turn — run the real agent pipeline and produce the strict answer.
-        log_fn, log_buffer = make_logger(chat_id, qid=message_id)
+        log_fn, log_buffer = make_logger()
         answer_payload = await run_agent_and_format(
             session["messages"],
             timeout_seconds=60,
