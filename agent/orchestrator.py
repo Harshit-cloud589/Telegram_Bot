@@ -631,15 +631,28 @@ def execute_tool_call(tc, state, log_fn=None):
 
 
 def ask_llm(chat_messages):
+    print("ENTER ask_llm")
 
-    response = client.chat.completions.create(
-        model=MODEL_NAME,
-        messages=chat_messages,
-        tools=TOOL_SCHEMAS,
-        temperature=0,
-    )
+    try:
+        response = client.chat.completions.create(
+            model=MODEL_NAME,
+            messages=chat_messages,
+            tools=TOOL_SCHEMAS,
+            temperature=0,
+        )
+        print("CREATE FINISHED")
+        print(response)
 
-    return response.choices[0].message
+        return response.choices[0].message
+
+    except BaseException as e:
+        print("ASK_LLM EXCEPTION")
+        print(type(e))
+        print(repr(e))
+        raise
+
+    finally:
+        print("EXIT ask_llm")
 
 
 async def run_agent_and_format(
