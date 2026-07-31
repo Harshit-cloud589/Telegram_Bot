@@ -11,7 +11,7 @@ from logger import LOG_URL
 
 # client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
 client = Groq(api_key=os.getenv("GROQ_API_KEY"))
-MODEL_NAME = "openai/gpt-oss-120b"
+MODEL_NAME = "moonshotai/kimi-k2-instruct"
 import inspect
 import json
 import re
